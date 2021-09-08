@@ -20,10 +20,12 @@
 #define PKT_CMD_ID			0x00
 #define PKT_CMD_STATUS		0x01
 #define PKT_CMD_MEAS		0x02
-#define PKT_CMD_START		0x03
-#define PKT_CMD_STOP		0x04
 
 #define PKT_CMD_SETADDR		0x10
+#define PKT_CMD_GETCAL		0x11
+#define PKT_CMD_SETCAL		0x12
+#define PKT_CMD_WRITECAL	0x13
+
 
 #define ADC_NUM_SAMPLES		16
 
@@ -35,13 +37,134 @@
 #define MUX_CH5	6
 #define MUX_CH6	5
 
+#define PARAMS_LEN	33
+#define PARAMS_VER	1
+
+#define PARAM_CHECK_CRC_ERR	0x01
+#define PARAM_CHECK_VER_ERR	0x02
+#define PARAM_CHECK_OLD		0x04
+#define PARAM_CHECK_CURRENT	0x08
+#define PARAM_CHECK_ERROR	0x80
+
+#define CAL_DATA_ADDR			0x00
+#define CAL_DATA_OFFSET			0x01
+#define CAL_DATA_FULLSCALE		0x11
+
+#define CAL_PAGE_BYTES	(PARAMS_LEN+4)
+
+#define CAL_PAGE_OFFSET_VER		0x00
+#define CAL_PAGE_OFFSET_VER_INV	0x01
+#define CAL_PAGE_OFFSET_CRCH	0x02
+#define CAL_PAGE_OFFSET_CRCL	0x03
+#define CAL_PAGE_OFFSET_DATA	0x04
+
+
+#define FLASH_ADDR_CAL		0x1C00
+#define FLASH_ADDR_BOOT		0x1E00
 
 SI_LOCATED_VARIABLE_NO_INIT(uuid[4], uint8_t, const SI_SEG_XDATA, 0x00FC);
+
+// special flash pages
+SI_LOCATED_VARIABLE_NO_INIT(nvs_flash[512], uint8_t, const SI_SEG_CODE, FLASH_ADDR_CAL);
+SI_LOCATED_VARIABLE_NO_INIT(boot_flash[512], uint8_t, const SI_SEG_CODE, FLASH_ADDR_BOOT);
+
+
+/* --- calibration page structure ---
+ * Version (1 byte)
+ * Version inverted (1 byte)
+ * Data CRC-16 (2 bytes)
+ * CAL DATA (0-252 bytes)
+ */
+
+/* --- CAL DATA structure v1 ---
+ * 0x000: Card address
+ * 0x001: CH1 OFFSET MSB
+ * 0x002: CH1 OFFSET LSB
+ * 0x003: CH2 OFFSET MSB
+ * 0x004: CH2 OFFSET LSB
+ * 0x005: CH3 OFFSET MSB
+ * 0x006: CH3 OFFSET LSB
+ * 0x007: CH4 OFFSET MSB
+ * 0x008: CH4 OFFSET LSB
+ * 0x009: CH5 OFFSET MSB
+ * 0x00A: CH5 OFFSET LSB
+ * 0x00B: CH6 OFFSET MSB
+ * 0x00C: CH6 OFFSET LSB
+ * 0x00D: VDD OFFSET MSB
+ * 0x00E: VDD OFFSET LSB
+ * 0x00F: TEMP OFFSET MSB
+ * 0x010: TEMP OFFSET LSB
+ * 0x011: CH1 FULLSCALE MSB
+ * 0x012: CH1 FULLSCALE LSB
+ * 0x013: CH2 FULLSCALE MSB
+ * 0x014: CH2 FULLSCALE LSB
+ * 0x015: CH3 FULLSCALE MSB
+ * 0x016: CH3 FULLSCALE LSB
+ * 0x017: CH4 FULLSCALE MSB
+ * 0x018: CH4 FULLSCALE LSB
+ * 0x019: CH5 FULLSCALE MSB
+ * 0x01A: CH5 FULLSCALE LSB
+ * 0x01B: CH6 FULLSCALE MSB
+ * 0x01C: CH6 FULLSCALE LSB
+ * 0x01D: VDD FULLSCALE MSB
+ * 0x01E: VDD FULLSCALE LSB
+ * 0x01F: TEMP FULLSCALE MSB
+ * 0x020: TEMP FULLSCALE LSB
+ */
+
+/* --- CAL DATA structure v2 ---
+ * 0x000: CH1 OFFSET MSB
+ * 0x001: CH1 OFFSET LSB
+ * 0x002: CH2 OFFSET MSB
+ * 0x003: CH2 OFFSET LSB
+ * 0x004: CH3 OFFSET MSB
+ * 0x005: CH3 OFFSET LSB
+ * 0x006: CH4 OFFSET MSB
+ * 0x007: CH4 OFFSET LSB
+ * 0x008: CH5 OFFSET MSB
+ * 0x009: CH5 OFFSET LSB
+ * 0x00A: CH6 OFFSET MSB
+ * 0x00B: CH6 OFFSET LSB
+ * 0x00C: VDD OFFSET MSB
+ * 0x00D: VDD OFFSET LSB
+ * 0x00E: TEMP OFFSET MSB
+ * 0x00F: TEMP OFFSET LSB
+ * 0x010: CH1 FULLSCALE MSB
+ * 0x011: CH1 FULLSCALE LSB
+ * 0x012: CH2 FULLSCALE MSB
+ * 0x013: CH2 FULLSCALE LSB
+ * 0x014: CH3 FULLSCALE MSB
+ * 0x015: CH3 FULLSCALE LSB
+ * 0x016: CH4 FULLSCALE MSB
+ * 0x017: CH4 FULLSCALE LSB
+ * 0x018: CH5 FULLSCALE MSB
+ * 0x019: CH5 FULLSCALE LSB
+ * 0x01A: CH6 FULLSCALE MSB
+ * 0x01B: CH6 FULLSCALE LSB
+ * 0x01C: VDD FULLSCALE MSB
+ * 0x01D: VDD FULLSCALE LSB
+ * 0x01E: TEMP FULLSCALE MSB
+ * 0x01F: TEMP FULLSCALE LSB
+ * 0x020: Card address
+ * 0x021: Bank position
+ * 0x030-0x04F: Card name
+ * 0x050-0x06F: Bank name
+ * 0x070-0x08F: CH1 name
+ * 0x090-0x0AF: CH2 name
+ * 0x0B0-0x0CF: CH3 name
+ * 0x0D0-0x0EF: CH4 name
+ * 0x0F0-0x10F: CH5 name
+ * 0x110-0x12F: CH6 name
+ *
+ */
+
 
 uint8_t pktBuf_len = 0;
 uint8_t xdata pktBuf[PKT_MAXLEN];
 uint8_t ownAddr = 1;
 
+uint8_t flash_key1 = 0;
+uint8_t flash_key2 = 0;
 
 // ch sel	input
 // X7 000	GND
@@ -55,7 +178,7 @@ uint8_t ownAddr = 1;
 
 uint8_t code chMux[6] = {1,3,2,4,6,5};
 
-uint16_t xdata cal_offset[8] = {10,10,10,10,10,10,0,-2656};
+int16_t xdata cal_offset[8] = {10,10,10,10,10,10,0,-2656};
 uint16_t xdata cal_fullscale[8] = {20290,20290,20290,20290,20290,20290,4800,8421};
 
 //-----------------------------------------------------------------------------
@@ -90,9 +213,13 @@ void resetTimeout()
 	TCON_TR0 = 0;
 	TCON_TF0 = 0;
 
-	// 100 msec at HFOSC/16
-	TH0 = 0xF3;
-	TL0 = 0x8A;
+	// 100 msec at HFOSC/16 (/4)
+	TH0 = 0x6A;
+	TL0 = 0x76;
+
+	// 100 msec at HFOSC/16 (/48)
+	//TH0 = 0xF3;
+	//TL0 = 0x8A;
 
 	// 1 sec
 	//TH0 = 0x83;
@@ -104,9 +231,19 @@ void resetTimeout()
 
 }
 
-void sendPkt()
+bool sendReply()
 {
+
+	uint8_t txLen;
 	uint8_t txIdx;
+
+	txLen = pktBuf[PKT_INDEX_LEN] + 1;
+
+	if (!cobs_encode(txLen, pktBuf))
+	{
+		// COBS encoding failed
+		return false;
+	}
 
 	// enforce minimum RX -> TX time by waiting until Timer0 overflows
 	while (!TCON_TF0);
@@ -120,7 +257,7 @@ void sendPkt()
 	SCON0_TI = 0;	// reset TI flag
 
 	// send buffer
-	for (txIdx = 0; txIdx < pktBuf_len; txIdx++)
+	for (txIdx = 0; txIdx < txLen; txIdx++)
 	{
 		SBUF0 = pktBuf[txIdx];
 		while (!SCON0_TI);	// wait for TX to finish
@@ -132,6 +269,7 @@ void sendPkt()
 	while (!SCON0_TI);	// wait for TX to finish
 	SCON0_TI = 0;	// reset TI flag
 
+	return true;
 }
 
 
@@ -168,7 +306,7 @@ uint16_t getADC()
 
 void doMeas()
 {
-	uint16_t adcRes;
+	int16_t adcRes;
 	uint8_t ch;
 
 	// measure and put into packet buffer
@@ -178,8 +316,7 @@ void doMeas()
 	for (ch = 0; ch < 6; ch++)
 	{
 		P1 = chMux[ch];	// select MUX channel
-		adcRes = getADC();
-		adcRes = (((uint32_t)adcRes * cal_fullscale[ch]) / 65536) + cal_offset[ch];	// apply calibration
+		adcRes = (((uint32_t)getADC() * cal_fullscale[ch]) / 65536) + cal_offset[ch];	// apply calibration
 		pktBuf[PKT_INDEX_DATA + (ch*2)]     = adcRes & 0xFF;	// LSB
 		pktBuf[PKT_INDEX_DATA + (ch*2) + 1] = adcRes >> 8;	    // MSB
 	}
@@ -190,8 +327,7 @@ void doMeas()
 	// measure VDD
 	ADC0CF &= ~ADC0CF_ADGN__GAIN_1;	// set gain to 0.5
 	ADC0MX = ADC0MX_ADC0MX__VDD;	// select vdd channel
-	adcRes = getADC();
-	adcRes = (((uint32_t)adcRes * cal_fullscale[6]) / 65536) + cal_offset[6];	// apply calibration
+	adcRes = (((uint32_t)getADC() * cal_fullscale[6]) / 65536) + cal_offset[6];	// apply calibration
 	pktBuf[PKT_INDEX_DATA + 12] = adcRes & 0xFF;	// LSB
 	pktBuf[PKT_INDEX_DATA + 13] = adcRes >> 8;	    // MSB
 
@@ -199,12 +335,174 @@ void doMeas()
 	REF0CN |= REF0CN_TEMPE__TEMP_ENABLED;	// enable temp sensor
 	ADC0MX = ADC0MX_ADC0MX__TEMP;	// select temp channel
 	ADC0CF |= ADC0CF_ADGN__GAIN_1;	// set gain to 1.0
-	adcRes = getADC();
-	adcRes = (((uint32_t)adcRes * cal_fullscale[7]) / 65536) + cal_offset[7];	// apply calibration
+	adcRes = (((uint32_t)getADC() * cal_fullscale[7]) / 65536) + cal_offset[7];	// apply calibration
 	ADC0MX = ADC0MX_ADC0MX__GND;	// select GND
 	REF0CN &= ~REF0CN_TEMPE__TEMP_ENABLED;	// disable temp sensor
 	pktBuf[PKT_INDEX_DATA + 14] = adcRes & 0xFF;	// LSB
 	pktBuf[PKT_INDEX_DATA + 15] = adcRes >> 8;	    // MSB
+}
+
+
+bool checkParams()
+{
+	uint8_t i;
+
+	if (nvs_flash[CAL_PAGE_OFFSET_VER] != PARAMS_VER)
+		return false;	// wrong version
+
+	if (nvs_flash[CAL_PAGE_OFFSET_VER_INV] != (PARAMS_VER^0xFF))
+		return false;	// wrong version complement
+
+	CRC0CN0 |= CRC0CN0_CRCVAL__SET_ONES;
+	CRC0CN0 |= CRC0CN0_CRCINIT__INIT;
+
+
+	for (i=CAL_PAGE_OFFSET_DATA; i<(PARAMS_LEN+CAL_PAGE_OFFSET_DATA); i++)
+	{
+		CRC0IN = nvs_flash[i];
+	}
+
+	CRC0CN0 |= CRC0CN0_CRCPNT__ACCESS_UPPER;	// MSB
+	if (CRC0DAT != nvs_flash[CAL_PAGE_OFFSET_CRCH])
+		return false;	// CRC error
+
+	CRC0CN0 &= ~CRC0CN0_CRCPNT__ACCESS_UPPER;	// LSB
+	if (CRC0DAT != nvs_flash[CAL_PAGE_OFFSET_CRCL])
+		return false;	// CRC error
+
+	return true;
+}
+
+void loadParams()
+{
+	uint8_t i;
+
+	if (checkParams())
+	{
+		// parameters OK, load addr+cal
+		ownAddr = nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_ADDR];
+
+		for (i=0; i<16; i++)
+		{
+			((uint8_t*)cal_offset)[i] = nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_OFFSET+i];
+			((uint8_t*)cal_fullscale)[i] = nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_FULLSCALE+i];
+		}
+	}
+}
+
+void flashWriteByte(uint16_t addr, uint8_t byte)
+{
+  uint8_t SI_SEG_XDATA * pwrite = (uint8_t SI_SEG_XDATA *) addr;
+
+  // Unlock flash by writing the key sequence
+  FLKEY = (flash_key1^0xFF);
+  FLKEY = (flash_key2^0xFF);
+
+  // Enable flash writes, then do the write
+  PSCTL |= PSCTL_PSWE__WRITE_ENABLED;
+  *pwrite = byte;
+  PSCTL &= ~(PSCTL_PSEE__ERASE_ENABLED|PSCTL_PSWE__WRITE_ENABLED);
+}
+
+
+bool verifyCal()
+{
+	uint8_t i;
+
+	// --- build CRC ---
+
+	// init CRC
+	CRC0CN0 |= CRC0CN0_CRCVAL__SET_ONES;
+	CRC0CN0 |= CRC0CN0_CRCINIT__INIT;
+
+	// address byte
+	CRC0IN = ownAddr;
+
+	// cal data
+	for (i=0; i<16; i++)
+	{
+		CRC0IN = ((uint8_t*)cal_offset)[i];
+	}
+
+	for (i=0; i<16; i++)
+	{
+		CRC0IN = ((uint8_t*)cal_fullscale)[i];
+	}
+
+	// --- verify ---
+	CRC0CN0 |= CRC0CN0_CRCPNT__ACCESS_UPPER;	// MSB
+	if (CRC0DAT != nvs_flash[CAL_PAGE_OFFSET_CRCH])
+		return false;
+	CRC0CN0 &= ~CRC0CN0_CRCPNT__ACCESS_UPPER;	// LSB
+	if (CRC0DAT != nvs_flash[CAL_PAGE_OFFSET_CRCL])
+		return false;
+
+	if ((PARAMS_VER^0xFF) != nvs_flash[CAL_PAGE_OFFSET_VER_INV])
+		return false;
+	if (PARAMS_VER != nvs_flash[CAL_PAGE_OFFSET_VER])
+		return false;
+
+	if (ownAddr != nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_ADDR])
+		return false;
+
+	for (i=0; i<16; i++)
+	{
+		if (((uint8_t*)cal_offset)[i] != nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_OFFSET+i])
+			return false;
+		if (((uint8_t*)cal_fullscale)[i] != nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_FULLSCALE+i])
+			return false;
+	}
+
+	return true;
+}
+
+
+bool writeCal()
+{
+	uint8_t i;
+
+
+	// check key codes
+	if ((0x5A != flash_key1) || (0x0E != flash_key2))
+	{
+		return false;	// invalid keys
+	}
+
+	// first check if update is needed
+	if (verifyCal())
+		return true;	// no update needed
+
+	// data CRC already calculated in verifycal(), no need to do it again
+
+	// erase cal page
+	PSCTL |= PSCTL_PSEE__ERASE_ENABLED;
+	flashWriteByte(FLASH_ADDR_CAL, 0);
+
+	// write address byte
+	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_DATA+CAL_DATA_ADDR, ownAddr);
+
+	// write cal data
+	for (i=0; i<16; i++)
+	{
+		flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_DATA+CAL_DATA_OFFSET+i, ((uint8_t*)cal_offset)[i]);
+		flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_DATA+CAL_DATA_FULLSCALE+i, ((uint8_t*)cal_fullscale)[i]);
+	}
+
+	// write crc
+	CRC0CN0 |= CRC0CN0_CRCPNT__ACCESS_UPPER;	// MSB
+	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_CRCH, CRC0DAT);
+	CRC0CN0 &= ~CRC0CN0_CRCPNT__ACCESS_UPPER;	// LSB
+	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_CRCL, CRC0DAT);
+
+	// write version info
+	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_VER_INV, (PARAMS_VER^0xFF));
+	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_VER, PARAMS_VER);
+
+	// verify
+	if (!verifyCal())
+		return false;	// verify failed
+
+	return true;	// all OK
 }
 
 void processPkt()
@@ -233,7 +531,7 @@ void processPkt()
 	seqInit = true;
 	lastSeq = seq;
 
-	if (ownAddr == dstAddr)
+	if ((ownAddr == dstAddr) && (ownAddr != 0))
 	{
 		// addressed to this node
 
@@ -266,27 +564,78 @@ void processPkt()
 				pktBuf[PKT_INDEX_LEN] += 16;	// 16 bytes payload
 				break;
 
+			case PKT_CMD_GETCAL:
+
+				for (tmp8=0; tmp8<16; tmp8++)
+				{
+					pktBuf[PKT_INDEX_DATA + tmp8] = ((uint8_t*)cal_offset)[tmp8];
+					pktBuf[PKT_INDEX_DATA + 16 + tmp8] = ((uint8_t*)cal_fullscale)[tmp8];
+				}
+				pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				pktBuf[PKT_INDEX_LEN] += 32;	// 32 bytes payload
+				break;
+
+			case PKT_CMD_SETCAL:
+
+				for (tmp8=0; tmp8<16; tmp8++)
+				{
+					((uint8_t*)cal_offset)[tmp8] = pktBuf[PKT_INDEX_DATA + tmp8];
+					((uint8_t*)cal_fullscale)[tmp8] = pktBuf[PKT_INDEX_DATA + 16 + tmp8];
+				}
+				pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				break;
+
+			case PKT_CMD_WRITECAL:
+				// store received keys
+				flash_key1 = pktBuf[PKT_INDEX_DATA];
+				flash_key2 = pktBuf[PKT_INDEX_DATA+1];
+				// clear key codes from buffer
+				pktBuf[PKT_INDEX_DATA] = 0;
+				pktBuf[PKT_INDEX_DATA+1] = 0;
+
+				if (writeCal())
+				{
+					// write OK
+					pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				}
+
+				// clear key codes from memory
+				flash_key1 = 0;
+				flash_key2 = 0;
+				break;
+
 		}
 
 		// send reply
-		pktBuf_len = pktBuf[PKT_INDEX_LEN] + 1;
-
-		if (cobs_encode(pktBuf_len, pktBuf))
-		{
-			// COBS encoding successful
-			sendPkt();
-		}
-
-
-
-
-
-
-
-
+		sendReply();
 	}
 	else if (dstAddr == 255)
 	{
+		if ((pktBuf[PKT_INDEX_CMD] == PKT_CMD_SETADDR) && (pktBuf[PKT_INDEX_LEN] == 9))
+		{
+			// set address
+			// check if jumper is present
+			//if (!P2_B0)
+			if (1)
+			{
+				// yes, proceed
+
+				// prepare reply
+				pktBuf[PKT_INDEX_DST] = pktBuf[PKT_INDEX_SRC];
+				pktBuf[PKT_INDEX_FLAGS] = PKT_FLAG_REPLY | PKT_FLAG_OK;
+				pktBuf[PKT_INDEX_LEN] = PKT_MINLEN;
+
+				// set address
+				ownAddr = pktBuf[PKT_INDEX_DATA];
+
+				// in this case, send reply
+				pktBuf[PKT_INDEX_SRC] = ownAddr;
+				sendReply();
+			}
+
+
+		}
+
 		// broadcast packet, no reply
 	}
 
@@ -351,15 +700,18 @@ int main(void)
 
 
 	// CKCON setup
-	CKCON0 = CKCON0_T1M__SYSCLK | CKCON0_T2ML__SYSCLK | CKCON0_T3ML__EXTERNAL_CLOCK | CKCON0_SCA__SYSCLK_DIV_48;
+	CKCON0 = CKCON0_T2ML__SYSCLK | CKCON0_SCA__SYSCLK_DIV_4;
 
 	// Common Timer0/1 setup
 	TMOD = TMOD_T0M__MODE1 | TMOD_T1M__MODE2;
 
-	// Timer1 setup (9.570 kHz / 4785 baud)
+	// Timer1 setup (4.785 kHz / 2392 baud)
+	TH1 = 176;	// HFOSC / 16 (SCA /4)
+	TL1 = 176;	// HFOSC / 16 (SCA /4)
 
+	// Timer1 setup (9.570 kHz / 4785 baud)
 	//TH1 = 0xEC;	// HFOSC / 128
-	TH1 = 96;	// HFOSC / 16
+	//TH1 = 96;	// HFOSC / 16 (SCA /48)
 	TCON_TR1 = 1;
 
 	// setup Timer2 (ADC)
@@ -377,6 +729,9 @@ int main(void)
 	// config INT0 (P0.5)
 	IT01CF = IT01CF_IN0PL__ACTIVE_LOW | IT01CF_IN0SL__P0_5;
 	TCON_IT0 = 1;	// edge triggered
+
+	// load cal data
+	loadParams();
 
 	// enable interrupts
 	EIE1 |= EIE1_EADC0__ENABLED;

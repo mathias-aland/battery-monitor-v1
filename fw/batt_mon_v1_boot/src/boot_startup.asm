@@ -4,9 +4,9 @@ $NOMOD51
 
 #define BUF_LOC	0x08
 
-    NAME    BOOT_STARTUP
+	NAME    BOOT_STARTUP
 
-    PUBLIC  boot_otp
+	PUBLIC  boot_otp
 
 ; Declare and locate all memory segments used by the bootloader
 ?BL_START   	SEGMENT CODE AT BL_START_ADDRESS
@@ -15,17 +15,17 @@ $NOMOD51
 ?BUFFER     	SEGMENT DATA AT BUF_LOC
 
 ; Create idata segment for stack
-    RSEG    ?BL_STACK
-    DS      32
+	RSEG    ?BL_STACK
+	DS      32
 
 ; Create data segment for buffer
-    RSEG    ?BUFFER
-    DS      PKT_MAXLEN+1
+	RSEG    ?BUFFER
+	DS      PKT_MAXLEN+1
 
 ; Bootloader entry point (boot_vector)
-    RSEG    ?BL_START
+	RSEG    ?BL_START
 ?C_STARTUP:
-    USING   0
+	USING   0
 
     ; Port 0 setup
 	MOV		P0, #0F0H
@@ -39,17 +39,17 @@ $NOMOD51
 	MOV     A,RSTSRC
 	CJNE    A,#010H,pin_test	; if not software reset, check pin
 	MOV     A,R0
-    XRL     A,#BL_SIGNATURE
-    JZ      boot_start			; if R0 == signature, start bootloader
+	XRL     A,#BL_SIGNATURE
+	JZ      boot_start			; if R0 == signature, start bootloader
 
 app_start:
 ; check app CRC
 	ORL		CRC0CN0, #09H	; init, set pointer to MSB
 	MOV     DPTR, #0			; Start address = 0x0000
 	CLR     A
-    MOVC    A,@A+DPTR
-    CPL		A
-    JZ		boot_start
+	MOVC    A,@A+DPTR
+	CPL		A
+	JZ		boot_start
     ; 0x0000 is not 0xFF, continue with CRC check
 CRC_LOOP:
 	CLR		A
@@ -89,12 +89,12 @@ SOFTRESET:
 	MOV		RSTSRC, #012h	; software reset
 
 pin_test:
-    ANL     A,#03H                  ; A = RSTSRC
-    JZ      app_start               ; POR or PINR only
-    MOV     R0,#255					; total 583 us
+	ANL     A,#03H                  ; A = RSTSRC
+	JZ      app_start               ; POR or PINR only
+	MOV     R0,#255					; total 583 us
 pin_test_loop:                      ; deglitch loop
-    JB      BL_START_PIN,app_start  ; +3
-    DJNZ    R0,pin_test_loop        ; +4 = 7 cycles per loop
+	JB      BL_START_PIN,app_start  ; +3
+	DJNZ    R0,pin_test_loop        ; +4 = 7 cycles per loop
 
 boot_start:
 
@@ -315,7 +315,7 @@ COBS_ENC_NOCRC:
 COBS_ENC_NZ:
 	INC		R6		; increase COBS counter
 COBS_ENC_NEXT:
-	INC		R0		;  increase read ptr
+	INC		R0		; increase read ptr
 	DJNZ	R7, COBS_ENC_LOOP
 ; final COBS header
 	MOV		@R1, AR6
@@ -358,7 +358,7 @@ WRITE_LOOP:
 	AJMP	SEND_REPLY_OK
 
 RW_INIT_FAIL:
-	SETB	C; key error or out of range, carry == 1
+	SETB	C	; key error or out of range, carry == 1
 	RET
 RW_INIT:
 	; check keys
@@ -375,18 +375,18 @@ RW_INIT_NOKEYS:
 	ADD		A, #(0xFF - (CAL_START_ADDRESS / 64) + 1)
 	JC		RW_INIT_FAIL	; jump if out of range (carry bit set)
 	MOV		A, ?BUFFER+PKT_INDEX_DATA
-	MOV		R3, #64		; init loop counter = 64 bytes
-	MOV		B, R3		;
-	MUL		AB			; multiply by 64
-	MOV		DPL, A		; set DPL to LSB
-	MOV		DPH, B		; set DPH to MSB
+	MOV		R3, #64			; init loop counter = 64 bytes
+	MOV		B, R3			;
+	MUL		AB				; multiply by 64
+	MOV		DPL, A			; set DPL to LSB
+	MOV		DPH, B			; set DPH to MSB
 	; ok, carry == 0 (already cleared by MUL instruction)
 	RET
 
 ; need total of 15312 cycles for 5 ms
 ; loop count 2552 at 6 cycles per loop
 RX_WAITIDLE:
-	JNB		P0_B5, $ 		; wait for P0.5 to go high (UART RX)
+	JNB		P0_B5, $ 	; wait for P0.5 to go high (UART RX)
 	MOV		R7, #10		; 10 * 1534 + 1 = 15341 cycles = 5.0093 ms (~12 bits at 2400 baud)
 RX_WAITIDLE1:
 	MOV		R6, #255	; 255 * 6 + 4 = 1534 cycles
@@ -421,12 +421,12 @@ FLASH_WRITEBYTE:
 	RET
 
 ; Reserved Bytes (bl_revision, bl_signature, lock_byte)
-    RSEG    ?BL_RSVD
+	RSEG    ?BL_RSVD
 boot_rev:
-    DB      BL_REVISION
+	DB      BL_REVISION
 boot_otp:
-    DB      BL_SIGNATURE
+	DB      BL_SIGNATURE
 lock_byte:
-    DB      0xFF
+	DB      0xFF
 
-    END
+	END

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<title>Set node address</title>
+		<script>
+			function setAddr() {
+				var nodeAddr = parseInt(document.getElementById("node_addr").value);
+				var progress = document.getElementById("progress");
+				
+				if (isNaN(nodeAddr) || nodeAddr < 1 || nodeAddr > 254) {
+					progress.style.color = "red";
+					progress.textContent = "Invalid address!";
+					return;
+				}
+				
+				document.getElementById("setAddr").disabled = true;
+
+				var xhr = new XMLHttpRequest();
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+						
+							var respJSON = JSON.parse(xhr.responseText);
+							
+							if (respJSON.status == true)
+							{
+								progress.style.color = "black";
+								progress.textContent = "OK!";
+							}
+							else
+							{
+								progress.style.color = "red";
+								progress.textContent = "Failed to set address!";
+							}
+							document.getElementById("setAddr").disabled = false;
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed!";
+							document.getElementById("setAddr").disabled = false;
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText;
+							document.getElementById("setAddr").disabled = false;
+						}
+					}
+				};
+				
+				
+				progress.style.color = "black";
+				progress.textContent = "In progress...";
+				
+				xhr.open("POST", "/api", true);
+				xhr.timeout = 10000;
+				xhr.setRequestHeader('Content-Type', 'application/json');
+				
+				var json = {
+					"cmd": "setaddr",
+					"address": nodeAddr
+				};
+				
+				xhr.send(JSON.stringify(json));
+			}
+		</script>
+	</head>
+	<body style="text-align:center;">
+		<h1>Set node address</h1>
+		Place a jumper between pins 1-2 on JP1 on the target node.<br>Enter the desired address and click <i>Set address</i> to save the new address to flash.<br><br>
+		<b>Only place the jumper on one node at a time!</b><br>
+		<b>Make sure that each node has it's own unique address!</b><br>
+		<span style="font-weight:bold;color:red">NOTE: This will also save any pending calibration values!!!</span><br><br>
+		<div>
+			<label for="node_addr">Node address (1-254):</label>
+			<input type="number" min="1" max="254" id="node_addr" name="node_addr" placeholder="Address" required>
+		</div>
+		<br>
+		<div>
+			<button id="setAddr" type="button" onclick="setAddr()">Set address</button>
+		</div>
+		<br>
+		<div id="progress"></div>
+	</body>
+</html>

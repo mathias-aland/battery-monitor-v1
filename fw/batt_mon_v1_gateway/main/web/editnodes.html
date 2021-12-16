@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<title>Edit groups and nodes</title>
+		
+		
+		<style>
+		#nodes, #groups {
+		  font-family: Arial, Helvetica, sans-serif;
+		  border-collapse: collapse;
+		  margin-left:auto;
+		  margin-right:auto;
+		}
+
+		#nodes td, #nodes th, #groups td, #groups th {
+		  border: 1px solid #ddd;
+		  padding: 2px;
+		}
+
+		#nodes tr:nth-child(even){background-color: #f2f2f2;}
+
+		#nodes tr:hover {background-color: #ddd;}
+		
+		
+		#groups tr:nth-child(even){background-color: #f2f2f2;}
+
+		#groups tr:hover {background-color: #ddd;}
+
+		#nodes th, #groups th {
+		  padding: 4px;
+		  text-align: left;
+		  background-color: #04AA6D;
+		  color: white;
+		}
+		
+		#nodes td, #groups td {
+		  text-align: left;
+		}
+		
+		
+		</style>
+		
+		
+		
+		
+		<script>
+		
+			window.onload = function() {
+			
+			
+				// get data from GW
+				
+				var progress = document.getElementById("progress");
+				var xhr = new XMLHttpRequest();
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+						
+							var respJSON = JSON.parse(xhr.responseText);
+							
+							progress.style.color = "black";
+							progress.textContent = "OK!";
+							
+							// update interval
+							document.getElementById("interval").value = respJSON.interval;
+							
+							// fill table with data
+							
+							// groups table
+							var tableElem = document.getElementById("groups");
+															
+							for (var i = 0; i < 8; i++) {					
+								
+								var newRow = tableElem.insertRow(-1);
+								
+								
+								var newCell = newRow.insertCell(-1);
+								
+								
+								var newText = document.createTextNode((i+1).toString());
+												
+								
+								newCell.appendChild(newText);
+								
+								newCell = newRow.insertCell(-1);
+													
+								newInput = document.createElement("input");
+								newInput.setAttribute("type", "text");
+								newInput.setAttribute("id", "group_name" + i.toString());
+								newInput.setAttribute("name", "group_name" + i.toString())
+								newInput.setAttribute("maxlength", "15")
+								newInput.setAttribute("placeholder", "Max 15 characters");
+								newInput.value = respJSON.groups[i].name;
+								
+								newCell.appendChild(newInput);
+								
+								
+								newCell = newRow.insertCell(-1);
+													
+								newInput = document.createElement("input");
+								newInput.setAttribute("type", "checkbox");
+								newInput.setAttribute("id", "group_en" + i.toString());
+								newInput.setAttribute("name", "group_en" + i.toString())
+								newInput.checked = respJSON.groups[i].en;
+								
+								newCell.appendChild(newInput);
+								
+								
+								
+							} 
+							
+							
+						
+							var tableElem = document.getElementById("nodes");
+							
+							for (var i = 0; i < 16; i++) {					
+								
+								var newRow = tableElem.insertRow(-1);
+								
+								
+								var newCell = newRow.insertCell(-1);
+								
+								
+								
+								var newText = document.createTextNode((i+1).toString());
+												
+								
+								newCell.appendChild(newText);
+								
+								newCell = newRow.insertCell(-1);
+								
+								
+								
+								var newInput = document.createElement("input");
+								newInput.setAttribute("type", "number");
+								newInput.setAttribute("min", "1");
+								newInput.setAttribute("max", "254");
+								newInput.setAttribute("id", "node_addr" + i.toString());
+								newInput.setAttribute("name", "node_addr" + i.toString())
+								newInput.setAttribute("placeholder", "1-254");
+								if (respJSON.nodes[i].addr == 0)
+								{
+									newInput.value = "";
+								}
+								else
+								{
+									newInput.value = respJSON.nodes[i].addr;
+								}
+								
+								newCell.appendChild(newInput);
+								
+								newCell = newRow.insertCell(-1);
+													
+								newInput = document.createElement("input");
+								newInput.setAttribute("type", "number");
+								newInput.setAttribute("min", "1");
+								newInput.setAttribute("max", "8");
+								newInput.setAttribute("id", "node_grp" + i.toString());
+								newInput.setAttribute("name", "node_grp" + i.toString())
+								newInput.setAttribute("placeholder", "1-8");
+								if (respJSON.nodes[i].grp == 0)
+								{
+									newInput.value = "";
+								}
+								else
+								{
+									newInput.value = respJSON.nodes[i].grp;
+								}
+								
+								newCell.appendChild(newInput);
+								
+								newCell = newRow.insertCell(-1);
+													
+								newInput = document.createElement("input");
+								newInput.setAttribute("type", "number");
+								newInput.setAttribute("min", "1");
+								newInput.setAttribute("max", "4");
+								newInput.setAttribute("id", "node_pos" + i.toString());
+								newInput.setAttribute("name", "node_pos" + i.toString())
+								newInput.setAttribute("placeholder", "1-4");
+								if (respJSON.nodes[i].pos == 0)
+								{
+									newInput.value = "";
+								}
+								else
+								{
+									newInput.value = respJSON.nodes[i].pos;
+								}
+								
+								newCell.appendChild(newInput);
+								
+								newCell = newRow.insertCell(-1);
+													
+								newInput = document.createElement("input");
+								newInput.setAttribute("type", "text");
+								newInput.setAttribute("id", "node_name" + i.toString());
+								newInput.setAttribute("name", "node_name" + i.toString())
+								newInput.setAttribute("maxlength", "15")
+								newInput.setAttribute("placeholder", "Max 15 characters");
+								newInput.value = respJSON.nodes[i].name;
+								
+								newCell.appendChild(newInput);
+								
+								newCell = newRow.insertCell(-1);
+													
+								newInput = document.createElement("input");
+								newInput.setAttribute("type", "checkbox");
+								newInput.setAttribute("id", "node_en" + i.toString());
+								newInput.setAttribute("name", "node_en" + i.toString())
+								newInput.checked = respJSON.nodes[i].en;
+								
+								newCell.appendChild(newInput);
+							} 
+							
+							
+							// enable submit button
+							document.getElementById("submit").disabled = false;
+							
+							
+								
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed!";
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText;
+						}
+					}
+				};
+				
+				
+				progress.style.color = "black";
+				progress.textContent = "Retrieving data, please wait...";
+				
+				xhr.open("POST", "/api", true);
+				xhr.timeout = 10000;
+				xhr.setRequestHeader('Content-Type', 'application/json');
+				
+				var json = {
+					"cmd": "getnodecfg"
+				};
+				
+				xhr.send(JSON.stringify(json));
+			};
+			
+			
+			function submit() {
+			
+				var progress = document.getElementById("progress");
+				
+				// check update interval
+				var updInt = parseInt(document.getElementById("interval").value);
+				
+				if (isNaN(updInt) || updInt < 10 || updInt > 65535) {
+					progress.style.color = "red";
+					progress.textContent = "Invalid update interval!";
+					return;
+				}
+				
+				// disable submit button
+				document.getElementById("submit").disabled = true;
+			
+				// build JSON
+				
+				var json = {
+					"cmd": "setnodecfg",
+					"interval": updInt,
+					"groups": [],
+					"nodes": []
+				};
+				
+				// groups
+				for (var i = 0; i < 8; i++) {				
+
+					
+					var group = {
+						"name": document.getElementById("group_name" + i.toString()).value,
+						"en": document.getElementById("group_en" + i.toString()).checked
+					};
+					
+					json.groups.push(group);					
+					
+				}
+				
+				for (var i = 0; i < 16; i++) {
+					var nodeAddr = parseInt(document.getElementById("node_addr" + i.toString()).value);
+					
+					if (isNaN(nodeAddr))
+					{
+						nodeAddr = 0;	// set to zero if input is missing or invalid
+					}
+					
+					
+					var nodeGrp = parseInt(document.getElementById("node_grp" + i.toString()).value);
+					
+					if (isNaN(nodeGrp))
+					{
+						nodeGrp = 0;	// set to zero if input is missing or invalid
+					}
+					
+					var nodePos = parseInt(document.getElementById("node_pos" + i.toString()).value);
+					
+					if (isNaN(nodePos))
+					{
+						nodePos = 0;	// set to zero if input is missing or invalid
+					}
+				
+					var node = {
+						"addr": nodeAddr,
+						"grp": nodeGrp,
+						"pos": nodePos,
+						"name": document.getElementById("node_name" + i.toString()).value,
+						"en": document.getElementById("node_en" + i.toString()).checked
+					};
+				
+				
+					json.nodes.push(node);
+				}
+				
+				
+				// send to GW
+
+				var xhr = new XMLHttpRequest();
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+						
+							var respJSON = JSON.parse(xhr.responseText);
+							
+							progress.style.color = "black";
+							progress.textContent = "OK!";
+							
+							document.getElementById("submit").disabled = false;
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed!";
+							document.getElementById("submit").disabled = false;
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText;
+							document.getElementById("submit").disabled = false;
+						}
+					}
+				};
+				
+				
+				progress.style.color = "black";
+				progress.textContent = "In progress...";
+				
+				xhr.open("POST", "/api", true);
+				xhr.timeout = 10000;
+				xhr.setRequestHeader('Content-Type', 'application/json');
+								
+				xhr.send(JSON.stringify(json));			
+				
+			
+			}
+			
+		</script>
+	</head>
+	<body style="text-align:center;">
+		<h1>Edit groups and nodes</h1>
+		<label for="interval">Update interval (seconds): </label><input type="number" min="10" max="65535" placeholder="10-65535" id="interval" name="interval"><br><br>		
+		<table id="groups">
+			<tr>
+			<th>Group</th>
+			<th>Name</th>
+			<th>Enabled</th>
+			</tr>
+		</table>
+		<br>
+		<table id="nodes">
+			<tr>
+			<th>Node</th>
+			<th>Address</th>
+			<th>Group</th>
+			<th>Group pos</th>
+			<th>Name</th>
+			<th>Enabled</th>
+			</tr>
+		</table>
+		<br>
+		<div>
+			<button id="submit" type="button" onclick="submit()" disabled>Submit</button>
+		</div>
+		<br>
+		<div id="progress"></div>
+	</body>
+</html>

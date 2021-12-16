@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+ 
+<head>
+	<meta charset="utf-8"/>
+    <title>Calibrate node</title>
+    
+    
+    
+    
+    	<script>
+    	
+    	var liveData_timeout;
+    	var livedata_active = false;
+    	
+    	function liveData()
+    	{
+			if (livedata_active == true)
+			{
+				// get data
+				
+
+			  var nodeAddr = parseInt(document.getElementById("node_addr").value);
+			  var progress = document.getElementById("liveStatus");
+			  
+			  if (isNaN(nodeAddr) || nodeAddr < 1 || nodeAddr > 254) {
+				progress.style.color = "red";
+				progress.textContent = "Invalid address!";
+				liveData_timeout = setTimeout(liveData, 1000);
+			  } else {
+			  // address OK
+			  
+				var xhr = new XMLHttpRequest();
+				
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+							// success
+							
+							try {
+							
+								var respJSON = JSON.parse(xhr.responseText);
+								var liveText = document.getElementById("live_data");
+								
+								liveText.textContent =	"--- NODE " + respJSON.address + " ---\r\n" +
+														"CH1: " + respJSON.meas[0] + " mV\r\n" +
+														"CH2: " + respJSON.meas[1] + " mV\r\n" +
+														"CH3: " + respJSON.meas[2] + " mV\r\n" +
+														"CH4: " + respJSON.meas[3] + " mV\r\n" +
+														"CH5: " + respJSON.meas[4] + " mV\r\n" +
+														"CH6: " + respJSON.meas[5] + " mV\r\n" +
+														"VDD: " + respJSON.meas[6] + " mV\r\n" +
+														"TMP: " + (respJSON.meas[7]/10).toFixed(1) + " °C";
+								
+								progress.textContent = new Date().toLocaleString("sv-SE");
+								progress.style.color = "green";
+								
+							}
+							catch(err) {
+								progress.style.color = "red";
+								progress.textContent = "Exception: " + err.message;
+							}
+					
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed!";
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText;
+						}
+						
+						if (livedata_active == true)
+						{
+							liveData_timeout = setTimeout(liveData, 1000);
+						}
+						else
+						{
+							document.getElementById("liveStatus").textContent = "Stopped.";
+							document.getElementById("liveStatus").style.color = "black";
+						}
+						
+					}
+				};
+				
+				xhr.open("POST", "/api", true);
+				xhr.timeout = 3000;
+				xhr.setRequestHeader('Content-Type', 'application/json');
+				
+				var json = {
+					"cmd": "getmeas"
+				};
+				
+				json.address = nodeAddr;
+				
+				xhr.send(JSON.stringify(json));
+				
+				
+			  }
+			}
+    	
+    	}
+    	
+    	function toggleLive()
+    	{
+			if (livedata_active == false)
+			{
+				document.getElementById("btnLive").value = "Stop";
+				document.getElementById("liveStatus").textContent = "...";
+				document.getElementById("liveStatus").style.color = "black";
+				livedata_active = true;
+				liveData();
+			}
+			else
+			{
+				document.getElementById("btnLive").value = "Start";
+				livedata_active = false;
+				clearTimeout(liveData_timeout);
+				document.getElementById("liveStatus").textContent = "Stopped.";
+				document.getElementById("liveStatus").style.color = "black";
+			}
+    	}
+    	
+    	
+    function saveValues() {
+		var nodeAddr = parseInt(document.getElementById("node_addr").value);
+		var progress = document.getElementById("progress");    
+
+		if (isNaN(nodeAddr) || nodeAddr < 1 || nodeAddr > 254) {
+			progress.style.color = "red";
+			progress.textContent = "Invalid address!";
+			return;
+		}
+		
+		if (window.confirm("Do you really want to write calibration data to flash?")) {
+			// save
+
+			// build json
+			var json = {
+				"cmd": "savecal",
+				"address": nodeAddr
+			};
+					
+			var xhr = new XMLHttpRequest();
+			xhr.onreadystatechange = function() {
+				if (xhr.readyState == 4) {
+					if (xhr.status == 200) {
+						// success
+						progress.style.color = "black";
+						progress.textContent = "OK!";
+					} else if (xhr.status == 0) {
+						progress.style.color = "red";
+						progress.textContent = "Connection failed!";
+					} else {
+						progress.style.color = "red";
+						progress.textContent = xhr.status + " Error! " + xhr.responseText;
+					}
+				}
+			};
+			progress.style.color = "black";
+			progress.textContent = "Processing...";
+			xhr.open("POST", "/api", true);
+			xhr.timeout = 10000;
+			xhr.setRequestHeader('Content-Type', 'application/json');
+			xhr.send(JSON.stringify(json));
+		}
+    }
+    
+	function setValues() {
+	
+	  var nodeAddr = parseInt(document.getElementById("node_addr").value);
+	  var progress = document.getElementById("progress");
+	  
+	  if (isNaN(nodeAddr) || nodeAddr < 1 || nodeAddr > 254) {
+		progress.style.color = "red";
+		progress.textContent = "Invalid address!";
+	  } else {
+		// address OK
+
+		// build json
+		var json = {
+			"cmd": "setcal",
+			"address": nodeAddr,
+			"offset": [],
+			"fullscale": []
+		};
+		
+		for (var i = 0; i < 8; i++) {				
+			var offset = parseInt(document.getElementById("ch" + (i+1).toString() + "_offset").value);
+			
+			if (isNaN(offset))
+			{
+				progress.style.color = "red";
+				progress.textContent = "CH" + (i+1).toString() + " offset invalid!";
+				return;
+			}
+			
+			var fullscale = parseInt(document.getElementById("ch" + (i+1).toString() + "_full").value);
+			
+			if (isNaN(fullscale))
+			{
+				progress.style.color = "red";
+				progress.textContent = "CH" + (i+1).toString() + " fullscale invalid!";
+				return;
+			}
+			
+			json.offset.push(offset);
+			json.fullscale.push(fullscale);
+		}
+				
+		var xhr = new XMLHttpRequest();
+		xhr.onreadystatechange = function() {
+			if (xhr.readyState == 4) {
+				if (xhr.status == 200) {
+					// success
+					progress.style.color = "black";
+					progress.textContent = "OK!";
+				} else if (xhr.status == 0) {
+					progress.style.color = "red";
+					progress.textContent = "Connection failed!";
+				} else {
+					progress.style.color = "red";
+					progress.textContent = xhr.status + " Error! " + xhr.responseText;
+				}
+			}
+		};
+		progress.style.color = "black";
+		progress.textContent = "Processing...";
+		xhr.open("POST", "/api", true);
+		xhr.timeout = 10000;
+		xhr.setRequestHeader('Content-Type', 'application/json');
+		xhr.send(JSON.stringify(json));	
+	  }
+	}
+    
+    
+	
+	function getValues() {
+	
+	  var nodeAddr = parseInt(document.getElementById("node_addr").value);
+	  var progress = document.getElementById("progress");
+	  
+	  if (isNaN(nodeAddr) || nodeAddr < 1 || nodeAddr > 254) {
+		progress.style.color = "red";
+		progress.textContent = "Invalid address!";
+	  } else {
+	  // address OK
+	  
+	  
+		progress.style.color = "black";
+		progress.textContent = "Retrieving data...";
+		
+		var xhr = new XMLHttpRequest();
+		
+		xhr.onreadystatechange = function() {
+			if (xhr.readyState == 4) {
+				if (xhr.status == 200) {
+					// success
+					
+					try {
+					
+						var respJSON = JSON.parse(xhr.responseText);
+						
+						for (var i = 0; i < 8; i++) {	
+							document.getElementById("ch" + (i+1).toString() + "_offset").value = respJSON.offset[i];
+							document.getElementById("ch" + (i+1).toString() + "_full").value = respJSON.fullscale[i];
+						}
+						
+						progress.style.color = "black";
+						progress.textContent = "OK!";
+					}
+					catch(err) {
+						progress.style.color = "red";
+						progress.textContent = "Exception: " + err.message;
+					}
+			
+				} else if (xhr.status == 0) {
+					progress.style.color = "red";
+					progress.textContent = "Connection failed!";
+				} else {
+					progress.style.color = "red";
+					progress.textContent = xhr.status + " Error! " + xhr.responseText;
+				}
+			}
+		};
+		
+		progress.style.color = "black";
+		progress.textContent = "Retrieving data, please wait...";
+		
+		xhr.open("POST", "/api", true);
+		xhr.timeout = 10000;
+		xhr.setRequestHeader('Content-Type', 'application/json');
+		
+		var json = {
+			"cmd": "getcal"
+		};
+		
+		json.address = nodeAddr;
+		
+		xhr.send(JSON.stringify(json));	
+		
+		
+	  }
+	}
+	
+	function addrChanged() {
+		if (document.getElementById("keepvalues").checked == false)
+		{
+			// clear values
+			for (var i = 0; i < 8; i++) {	
+				document.getElementById("ch" + (i+1).toString() + "_offset").value = "";
+				document.getElementById("ch" + (i+1).toString() + "_full").value = "";
+			}
+		}
+	}
+	
+	</script>
+    
+</head>
+ 
+<body style="text-align:center;">
+ 
+    <h1>Calibrate node</h1>
+         
+	Node address (1-254): <input type="number" min="1" max="254" name="node_addr" id="node_addr" placeholder="Address" onchange="addrChanged()" required>&nbsp;&nbsp;<label for="keepvalues">Keep values when changing address</label><input type="checkbox" id="keepvalues" name="keepvalues">
+	<br><br>
+	
+	<b>CH1:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch1_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch1_full" placeholder="Full scale" required><br>
+	<b>CH2:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch2_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch2_full" placeholder="Full scale" required><br>
+	<b>CH3:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch3_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch3_full" placeholder="Full scale" required><br>
+	<b>CH4:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch4_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch4_full" placeholder="Full scale" required><br>
+	<b>CH5:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch5_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch5_full" placeholder="Full scale" required><br>
+	<b>CH6:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch6_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch6_full" placeholder="Full scale" required><br>
+	<b>VDD:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch7_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch7_full" placeholder="Full scale" required><br>
+	<b>TMP:</b> Offset (+/-32767 mV): <input type="number" min="-32767" max="32767" id="ch8_offset" placeholder="Offset" required>&nbsp;&nbsp;Full scale (1-65535 mV): <input type="number" min="1" max="65535" id="ch8_full" placeholder="Full scale" required><br>
+	
+	<br>
+	<input type="button" value="Get values" onClick="getValues()">&nbsp;&nbsp;<input type="button" value="Apply" onClick="setValues()">&nbsp;&nbsp;<input type="button" value="Save to flash" onClick="saveValues()">
+	
+	<br><br>
+	<div id="progress">Ready.</div>
+	<br>
+	<b>Live data:</b>&nbsp;&nbsp;<input type="button" value="Start" id="btnLive" onClick="toggleLive()">&nbsp;&nbsp;<br><br>
+	<div id="liveStatus" style="font-family: monospace; font-weight: bold;">Stopped.</div>
+	<p id="live_data" style="font-family: monospace; white-space: pre"></p>
+	
+
+ 
+ 
+
+ 
+ 
+</body>
+ 
+</html>  

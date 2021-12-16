@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<title>Battery monitor</title>
+		
+		
+		<style>
+		#nodes, #groups {
+		  font-family: Arial, Helvetica, sans-serif;
+		  border-collapse: collapse;
+		  margin-left:auto;
+		  margin-right:auto;
+		  table-layout: fixed;
+		}
+
+		#nodes td, #nodes th, #groups td, #groups th {
+		  border: 1px solid #ddd;
+		  padding: 2px;
+		  overflow: hidden;
+		}
+
+		#nodes tr:nth-child(even){background-color: #f2f2f2;}
+
+		#nodes tr:hover {background-color: #ddd;}
+		
+		
+		#groups tr:nth-child(even){background-color: #f2f2f2;}
+
+		#groups tr:hover {background-color: #ddd;}
+
+		#nodes th, #groups th {
+		  padding: 4px;
+		  text-align: left;
+		  background-color: #04AA6D;
+		  color: white;
+		}
+		
+		#nodes td, #groups td {
+		  text-align: left;
+		}
+		
+		
+		</style>
+		
+		
+		
+		
+		<script>
+		
+			//var prevNodeCnt = 0;
+		
+			function getMeas()
+			{
+				// get data from GW
+				
+				var progress = document.getElementById("progress");
+				var xhr = new XMLHttpRequest();
+				
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+							// success
+							
+							try {
+							
+								var respJSON = JSON.parse(xhr.responseText);
+								
+								// fill table with data
+								
+								var grpData = [];
+								
+								// populate groups table
+								
+								var tableElemGrp = document.getElementById("groups");
+								
+								
+								var prevNodeCnt = tableElemGrp.rows.length - 1; // exclude header
+								var grpNodeCnt = respJSON.groups.length;
+								
+																
+								while (prevNodeCnt < grpNodeCnt)
+								{
+									// need to add more rows
+									var newRow = tableElemGrp.insertRow(-1);
+									
+									for (var i = 0; i<7; i++)
+									{
+										var newCell = newRow.insertCell(-1);
+										var newText = document.createTextNode("---");
+										newCell.appendChild(newText);
+										
+									}
+									
+									prevNodeCnt = tableElemGrp.rows.length - 1; // exclude header
+								}
+								
+								while (prevNodeCnt > grpNodeCnt)
+								{
+									// need to delete rows
+									tableElemGrp.deleteRow(-1);
+									
+									prevNodeCnt = tableElemGrp.rows.length - 1; // exclude header
+								}
+								
+								
+								for (var i = 0; i < grpNodeCnt; i++) {	
+								
+									var grpDataObj = new Object();
+								
+									grpDataObj.cellMin = Number.POSITIVE_INFINITY;
+									grpDataObj.cellMax = Number.NEGATIVE_INFINITY;
+									grpDataObj.tempMin = Number.POSITIVE_INFINITY;
+									grpDataObj.tempMax = Number.NEGATIVE_INFINITY;
+									grpDataObj.total = 0;
+									grpDataObj.nodesCnt = 0;
+									grpDataObj.status = "OK";
+									grpDataObj.grpName = respJSON.groups[i].name;
+									
+									grpData[respJSON.groups[i].id] = grpDataObj;
+								
+									//grpData[grpId].cellMin = 1000;
+									//grpData[grpId].cellMax = -1000;
+									//grpData[grpId].tempMin = 1000;
+									//grpData[grpId].tempMax = -1000;
+									//grpData[grpId].total = 0;
+									//grpData[grpId].status = "OK";
+										
+									// Group name
+									//tableElemGrp.rows[i+1].cells[0].childNodes[0].nodeValue = respJSON.groups[i].name;
+									
+								}
+								
+								
+								
+								
+								
+								
+								
+							
+								var tableElem = document.getElementById("nodes");
+								
+								
+								var prevNodeCnt = tableElem.rows.length - 1; // exclude header
+								var nodeCnt = respJSON.nodes.length;
+								
+								
+								while (prevNodeCnt < nodeCnt)
+								{
+									// need to add more rows
+									var newRow = tableElem.insertRow(-1);
+									
+									for (var i = 0; i<11; i++)
+									{
+										var newCell = newRow.insertCell(-1);
+										var newText = document.createTextNode("");
+										newCell.appendChild(newText);
+										
+									}
+									
+									prevNodeCnt = tableElem.rows.length - 1; // exclude header
+								}
+								
+								while (prevNodeCnt > nodeCnt)
+								{
+									// need to delete rows
+									tableElem.deleteRow(-1);
+									
+									prevNodeCnt = tableElem.rows.length - 1; // exclude header
+								}
+																
+								for (var i = 0; i < nodeCnt; i++) {					
+													
+									// Node name
+									tableElem.rows[i+1].cells[0].childNodes[0].nodeValue = respJSON.nodes[i].name;
+									
+									// Node group
+									//tableElem.rows[i+1].cells[1].childNodes[0].nodeValue = respJSON.nodes[i].group;
+									
+									// Node status
+									tableElem.rows[i+1].cells[2].childNodes[0].nodeValue = respJSON.nodes[i].status;
+									
+									// Total voltage
+									var cell1 = respJSON.nodes[i].cells[0];
+									var cell2 = respJSON.nodes[i].cells[1];
+									var cell3 = respJSON.nodes[i].cells[2];
+									var cell4 = respJSON.nodes[i].cells[3];
+									var cell5 = respJSON.nodes[i].cells[4];
+									var cell6 = respJSON.nodes[i].cells[5];
+									
+									//var totalVolt = cell6;
+									var totalVolt = respJSON.nodes[i].vbat;
+									
+									//cell6 = cell6 - cell5;
+									//cell5 = cell5 - cell4;
+									//cell4 = cell4 - cell3;
+									//cell3 = cell3 - cell2;
+									//cell2 = cell2 - cell1;
+																		
+									tableElem.rows[i+1].cells[3].childNodes[0].nodeValue = (totalVolt/1000).toFixed(2) + " V";
+									
+									
+									
+									tableElem.rows[i+1].cells[4].childNodes[0].nodeValue = (cell1/1000).toFixed(2) + " V";
+									tableElem.rows[i+1].cells[5].childNodes[0].nodeValue = (cell2/1000).toFixed(2) + " V";
+									tableElem.rows[i+1].cells[6].childNodes[0].nodeValue = (cell3/1000).toFixed(2) + " V";
+									tableElem.rows[i+1].cells[7].childNodes[0].nodeValue = (cell4/1000).toFixed(2) + " V";
+									tableElem.rows[i+1].cells[8].childNodes[0].nodeValue = (cell5/1000).toFixed(2) + " V";
+									tableElem.rows[i+1].cells[9].childNodes[0].nodeValue = (cell6/1000).toFixed(2) + " V";
+									tableElem.rows[i+1].cells[10].childNodes[0].nodeValue = (respJSON.nodes[i].temp/10).toFixed(1) + " °C";
+									
+									
+									// update group list
+									
+									
+									if (respJSON.nodes[i].grp > 0)
+									{
+										// belongs to a group
+										grpData[respJSON.nodes[i].grp].nodesCnt++;
+										
+										if (respJSON.nodes[i].status != "OK")
+										{
+											grpData[respJSON.nodes[i].grp].status = "Error";
+										}
+										
+										// update min
+										if (cell1 < grpData[respJSON.nodes[i].grp].cellMin)
+										{
+											grpData[respJSON.nodes[i].grp].cellMin = cell1;
+										}
+										
+										if (cell2 < grpData[respJSON.nodes[i].grp].cellMin)
+										{
+											grpData[respJSON.nodes[i].grp].cellMin = cell2;
+										}
+										
+										if (cell3 < grpData[respJSON.nodes[i].grp].cellMin)
+										{
+											grpData[respJSON.nodes[i].grp].cellMin = cell3;
+										}
+										
+										if (cell4 < grpData[respJSON.nodes[i].grp].cellMin)
+										{
+											grpData[respJSON.nodes[i].grp].cellMin = cell4;
+										}
+										
+										if (cell5 < grpData[respJSON.nodes[i].grp].cellMin)
+										{
+											grpData[respJSON.nodes[i].grp].cellMin = cell5;
+										}
+										
+										if (cell6 < grpData[respJSON.nodes[i].grp].cellMin)
+										{
+											grpData[respJSON.nodes[i].grp].cellMin = cell6;
+										}
+										
+										// update max
+										if (cell1 > grpData[respJSON.nodes[i].grp].cellMax)
+										{
+											grpData[respJSON.nodes[i].grp].cellMax = cell1;
+										}
+										
+										if (cell2 > grpData[respJSON.nodes[i].grp].cellMax)
+										{
+											grpData[respJSON.nodes[i].grp].cellMax = cell2;
+										}
+										
+										if (cell3 > grpData[respJSON.nodes[i].grp].cellMax)
+										{
+											grpData[respJSON.nodes[i].grp].cellMax = cell3;
+										}
+										
+										if (cell4 > grpData[respJSON.nodes[i].grp].cellMax)
+										{
+											grpData[respJSON.nodes[i].grp].cellMax = cell4;
+										}
+										
+										if (cell5 > grpData[respJSON.nodes[i].grp].cellMax)
+										{
+											grpData[respJSON.nodes[i].grp].cellMax = cell5;
+										}
+										
+										if (cell6 > grpData[respJSON.nodes[i].grp].cellMax)
+										{
+											grpData[respJSON.nodes[i].grp].cellMax = cell6;
+										}
+										
+										// update total
+										grpData[respJSON.nodes[i].grp].total += totalVolt;
+										
+										// update temps
+										if (respJSON.nodes[i].temp < grpData[respJSON.nodes[i].grp].tempMin)
+										{
+											grpData[respJSON.nodes[i].grp].tempMin = respJSON.nodes[i].temp;
+										}
+										
+										if (respJSON.nodes[i].temp > grpData[respJSON.nodes[i].grp].tempMax)
+										{
+											grpData[respJSON.nodes[i].grp].tempMax = respJSON.nodes[i].temp;
+										}
+										
+										tableElem.rows[i+1].cells[1].childNodes[0].nodeValue = grpData[respJSON.nodes[i].grp].grpName;
+										
+									}
+									else
+									{
+										tableElem.rows[i+1].cells[1].childNodes[0].nodeValue = "---";
+									}
+									
+									
+								}
+								
+								// print groups data
+								
+								
+								for (var i = 0; i < grpNodeCnt; i++) {
+										
+									var grpId = respJSON.groups[i].id;
+									
+									// Group name
+									tableElemGrp.rows[i+1].cells[0].childNodes[0].nodeValue = grpData[grpId].grpName;
+									
+									if (grpData[grpId].nodesCnt > 0)
+									{
+										// Status	
+										tableElemGrp.rows[i+1].cells[1].childNodes[0].nodeValue = grpData[grpId].status;
+										
+										// Total voltage
+										tableElemGrp.rows[i+1].cells[2].childNodes[0].nodeValue = (grpData[grpId].total/1000).toFixed(2) + " V";
+										
+										// Cell min
+										tableElemGrp.rows[i+1].cells[3].childNodes[0].nodeValue = (grpData[grpId].cellMin/1000).toFixed(2) + " V";
+										
+										// Cell max
+										tableElemGrp.rows[i+1].cells[4].childNodes[0].nodeValue = (grpData[grpId].cellMax/1000).toFixed(2) + " V";
+										
+										// Temp min
+										tableElemGrp.rows[i+1].cells[5].childNodes[0].nodeValue = (grpData[grpId].tempMin/10).toFixed(1) + " °C";
+										
+										// Temp max
+										tableElemGrp.rows[i+1].cells[6].childNodes[0].nodeValue = (grpData[grpId].tempMax/10).toFixed(1) + " °C";
+										
+
+									}
+									else
+									{
+										// Status	
+										tableElemGrp.rows[i+1].cells[1].childNodes[0].nodeValue = "N/A";
+									}
+									
+								}
+								
+								
+								
+								progress.style.color = "black";
+								progress.textContent = "OK! Last update: " + new Date().toLocaleString("sv-SE");
+							
+							}
+							catch(err) {
+								progress.style.color = "red";
+								progress.textContent = "Exception: " + err.message + "! Retry in 10 seconds...";
+							}
+							
+							setTimeout(getMeas, 10000);						
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed! Retry in 10 seconds...";
+							setTimeout(getMeas, 10000);
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText + " Retry in 10 seconds...";
+							setTimeout(getMeas, 10000);
+						}
+					}
+				};
+				
+				
+				progress.style.color = "black";
+				progress.textContent = "Retrieving data, please wait...";
+				
+				xhr.open("GET", "/api", true);
+				//xhr.open("GET", "nodeData.json", true);
+				xhr.timeout = 10000;
+				xhr.overrideMimeType("application/json");
+				xhr.setRequestHeader('Content-Type', 'application/json');
+								
+				xhr.send();
+				
+				
+			}
+			
+			function requestReboot() {
+				var progress = document.getElementById("progress");
+				
+				if (window.confirm("Reboot controller?")) {
+					// save
+
+					// build json
+					var json = {
+						"cmd": "reboot"
+					};
+							
+					var xhr = new XMLHttpRequest();
+					xhr.onreadystatechange = function() {
+						if (xhr.readyState == 4) {
+							if (xhr.status == 200) {
+								// success
+								progress.style.color = "black";
+								progress.textContent = "OK!";
+							} else if (xhr.status == 0) {
+								progress.style.color = "red";
+								progress.textContent = "Connection failed!";
+							} else {
+								progress.style.color = "red";
+								progress.textContent = xhr.status + " Error! " + xhr.responseText;
+							}
+						}
+					};
+					progress.style.color = "black";
+					progress.textContent = "Processing...";
+					xhr.open("POST", "/api", true);
+					xhr.timeout = 10000;
+					xhr.setRequestHeader('Content-Type', 'application/json');
+					xhr.send(JSON.stringify(json));
+				}
+			}
+		
+		
+		
+			window.onload = function() {
+				getMeas();
+			};
+			
+			
+		</script>
+	</head>
+	<body style="text-align:center;">
+		<h1>Battery voltage monitor</h1>
+				
+		<table id="groups">
+			<tr>
+			<th style="width:100px">Group</th>
+			<th style="width:70px">Status</th>
+			<th style="width:70px">Total</th>
+			<th style="width:80px">Cell min</th>
+			<th style="width:80px">Cell max</th>
+			<th style="width:80px">Temp min</th>
+			<th style="width:80px">Temp max</th>
+			</tr>
+		</table>
+		<br>
+		<table id="nodes">
+			<tr>
+			<th style="width:100px">Node</th>
+			<th style="width:100px">Group</th>
+			<th style="width:70px">Status</th>
+			<th style="width:70px">Total</th>
+			<th style="width:70px">Cell 1</th>
+			<th style="width:70px">Cell 2</th>
+			<th style="width:70px">Cell 3</th>
+			<th style="width:70px">Cell 4</th>
+			<th style="width:70px">Cell 5</th>
+			<th style="width:70px">Cell 6</th>
+			<th style="width:70px">Temp</th>
+			</tr>
+		</table>
+		<br>
+		<div id="progress"></div>
+		<br><br>
+		<div><a href="/ui/editnodes">Edit nodes</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="/ui/cal">Calibrate node</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="/ui/setaddr">Set node address</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="/ui/network">System settings</a></div>
+		<br>
+		<div><a href="/ui/ota">Update controller FW</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="/ui/nodefw">Update node FW</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="/config">Download config</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="javascript:void(0)" onclick="requestReboot()">Reboot</a></div>
+	</body>
+</html>

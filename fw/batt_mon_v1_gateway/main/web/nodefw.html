@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<title>Node FW Update</title>
+		<script>
+			function startUpload() {
+				var otafile = document.getElementById("otafile").files;
+
+				if (otafile.length == 0) {
+					alert("No file selected!");
+				} else {
+					document.getElementById("otafile").disabled = true;
+					document.getElementById("upload").disabled = true;
+					document.getElementById("flash").disabled = true;
+
+					var file = otafile[0];
+					var xhr = new XMLHttpRequest();
+					xhr.onreadystatechange = function() {
+						if (xhr.readyState == 4) {
+							if (xhr.status == 200) {
+								var progress = document.getElementById("progress");
+								progress.textContent = xhr.responseText;
+								document.getElementById("otafile").disabled = false;
+							} else if (xhr.status == 0) {
+								alert("Server closed the connection abruptly!");
+								location.reload()
+							} else {
+								alert(xhr.status + " Error!\n" + xhr.responseText);
+								location.reload()
+							}
+						}
+					};
+
+					xhr.upload.onprogress = function (e) {
+						var progress = document.getElementById("progress");
+						progress.textContent = "Progress: " + (e.loaded / e.total * 100).toFixed(0) + "%";
+					};
+					xhr.open("POST", "/nodefwupdate", true);
+					xhr.send(file);
+				}
+			}
+			
+			function startFlash() {
+				document.getElementById("upload").disabled = true;
+				document.getElementById("flash").disabled = true;
+				var progress = document.getElementById("progress");   				
+				var nodeAddr;
+				
+				if (document.getElementById("safemode").checked)
+				{
+					nodeAddr = 0;
+				}
+				else
+				{
+					nodeAddr = parseInt(document.getElementById("node_addr").value);
+	 
+					if (isNaN(nodeAddr) || nodeAddr < 1 || nodeAddr > 254) {
+						progress.style.color = "red";
+						progress.textContent = "Invalid address!";
+						return;
+					}
+				}
+				
+				// build json
+				var json = {
+					"cmd": "nodefwupd",
+					"address": nodeAddr
+				};
+				
+				var xhr = new XMLHttpRequest();
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+							progress.style.color = "black";
+							progress.textContent = "OK!";
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed!";
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText;
+						}
+					}
+				};
+				
+				progress.style.color = "black";
+				progress.textContent = "Processing...";
+				xhr.open("POST", "/api", true);
+				xhr.timeout = 10000;
+				xhr.setRequestHeader('Content-Type', 'application/json');
+				xhr.send(JSON.stringify(json));
+			
+			}
+			
+			function getStatus()
+			{
+				// get data from GW
+				
+				var progress = document.getElementById("progress");
+				var xhr = new XMLHttpRequest();
+				
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState == 4) {
+						if (xhr.status == 200) {
+							// success
+							
+							try {
+							
+								var respJSON = JSON.parse(xhr.responseText);
+								var statusStr;
+								var stageStr;
+								
+								switch (respJSON.status)
+								{
+									case 0:	//FWUPD_STATUS_NO_DATA
+										statusStr = "No FW data in memory.";
+										document.getElementById("upload").disabled = false;
+										document.getElementById("flash").disabled = true;
+										break;
+									case 1:	//FWUPD_STATUS_CRC_ERR
+										statusStr = "CRC error, please re-upload file!";
+										document.getElementById("upload").disabled = false;
+										document.getElementById("flash").disabled = true;
+										break;
+									case 2:	//FWUPD_STATUS_IDLE
+										statusStr = "Ready for update.";
+										document.getElementById("upload").disabled = false;
+										document.getElementById("flash").disabled = false;
+										break;
+									case 3:	//FWUPD_STATUS_DONE
+										statusStr = "Last update was successful.";
+										document.getElementById("upload").disabled = false;
+										document.getElementById("flash").disabled = false;
+										break;
+									case 4:	//FWUPD_STATUS_FAIL
+										statusStr = "Last update failed!";
+										document.getElementById("upload").disabled = false;
+										document.getElementById("flash").disabled = false;
+										break;
+									case 5:	//FWUPD_STATUS_PEND
+										statusStr = "Update pending...";
+										document.getElementById("upload").disabled = true;
+										document.getElementById("flash").disabled = true;
+										break;
+									case 6:	//FWUPD_STATUS_BUSY
+										statusStr = "Update in progress...";
+										document.getElementById("upload").disabled = true;
+										document.getElementById("flash").disabled = true;
+										break;
+									default:
+										statusStr = "Unknown status!";
+										document.getElementById("upload").disabled = true;
+										document.getElementById("flash").disabled = true;
+										
+								}
+								
+								switch (respJSON.stage)
+								{
+									case 0:	//FWUPD_STAGE_NONE
+										stageStr = "IDLE";
+										break;
+									case 1:	//FWUPD_STAGE_ENTER_BOOT
+										stageStr = "ENTER_BOOT";
+										break;
+									case 2:	//FWUPD_STAGE_ERASE
+										stageStr = "ERASE";
+										break;
+									case 3:	//FWUPD_STAGE_WRITE
+										stageStr = "WRITE";
+										break;
+									case 4:	//FWUPD_STAGE_VERIFY
+										stageStr = "VERIFY";
+										break;
+									case 5:	//FWUPD_STAGE_RUN
+										stageStr = "RUN";
+										break;
+									default:
+										stageStr = "UNKNOWN";
+										
+								}
+								
+								progress.textContent =	statusStr + "\r\n" +
+														"Calculated CRC: 0x" + respJSON.crc.toString(16) + "\r\n" +
+														"Expected CRC:   0x" + respJSON.crccalc.toString(16) + "\r\n" +
+														"Current node:   " + respJSON.address + "\r\n" +
+														"Current stage:  " + stageStr + "\r\n" +
+														"Current block:  " + respJSON.block + "/" + respJSON.total + "\r\n" +
+														new Date().toLocaleString("sv-SE");
+								
+								
+								progress.style.color = "black";
+								setTimeout(getStatus, 1000);
+							}
+							catch(err) {
+								progress.style.color = "red";
+								progress.textContent = "Exception: " + err.message + "! Retry in 3 seconds...";
+								setTimeout(getStatus, 3000);
+							}					
+						} else if (xhr.status == 0) {
+							progress.style.color = "red";
+							progress.textContent = "Connection failed! Retry in 3 seconds...";
+							setTimeout(getStatus, 3000);
+						} else {
+							progress.style.color = "red";
+							progress.textContent = xhr.status + " Error! " + xhr.responseText + " Retry in 3 seconds...";
+							setTimeout(getStatus, 3000);
+						}
+					}
+				};
+								
+				xhr.open("POST", "/api", true);
+				xhr.timeout = 10000;
+				xhr.setRequestHeader('Content-Type', 'application/json');
+				
+				var json = {
+					"cmd": "nodefwstat"
+				};
+				
+				xhr.send(JSON.stringify(json));
+				
+				
+			}
+			
+			function safeModeChanged() {
+				if (document.getElementById("safemode").checked)
+				{
+					document.getElementById("node_addr").disabled = true;
+				}
+				else
+				{
+					document.getElementById("node_addr").disabled = false;
+				}
+			}
+			
+			window.onload = function() {
+				getStatus();
+			};
+			
+			
+		</script>
+	</head>
+	<body>
+		<h1>Node FW Update</h1>
+		<label for="node_addr">Node address (1-254):</label>
+		<input type="number" min="1" max="254" name="node_addr" id="node_addr" placeholder="Address" required>&nbsp;&nbsp;<label for="safemode">Fail-safe</label><input type="checkbox" id="safemode" name="safemode" onchange="safeModeChanged()">
+		<br><br>
+		<div>
+			<label for="otafile">Firmware file:</label>
+			<input type="file" id="otafile" name="otafile" />
+		</div>
+		<br>
+		<div>
+			<button id="upload" type="button" onclick="startUpload()">Upload</button>
+			<button id="flash" type="button" onclick="startFlash()" disabled>Start update</button>
+		</div>
+		<br>
+		<div>Fail-safe mode requres jumper to be present and node to be in bootloader mode (reset after placing jumper).</div>
+		<br>
+		<div id="progress" style="font-family: monospace; white-space: pre"></div>
+	</body>
+</html>

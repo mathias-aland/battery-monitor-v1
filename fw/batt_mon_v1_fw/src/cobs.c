@@ -33,7 +33,7 @@ bool cobs_decode(uint8_t bufLen, uint8_t xdata *buf)
 
 	CRC0CN0 |= CRC0CN0_CRCVAL__SET_ONES;
 	CRC0CN0 |= CRC0CN0_CRCINIT__INIT;
-	CRC0CN0 &= ~CRC0CN0_CRCPNT__BMASK;	// lower byte first
+	CRC0CN0 |= CRC0CN0_CRCPNT__ACCESS_UPPER;	// upper byte first
 
 	while (cobs_dataCnt < bufLen)
 	{
@@ -111,7 +111,7 @@ bool cobs_encode(uint8_t bufLen, uint8_t xdata *buf)
 		if (readIndex == (bufLen-3))
 		{
 			// CRC done, write values to buffer
-			CRC0CN0 &= ~CRC0CN0_CRCPNT__BMASK;	// lower byte first
+			CRC0CN0 |= CRC0CN0_CRCPNT__ACCESS_UPPER;	// upper byte first
 			buf[bufLen-2] = CRC0DAT;	// lower byte
 			buf[bufLen-1] = CRC0DAT;	// upper byte
 		}

@@ -13,13 +13,20 @@
 
 #include "common.h"
 #include "cobs.h"
+#include "utils.h"
 
-#define PKT_FLAG_REPLY		0x80
-#define PKT_FLAG_OK 		0x40
+#define PKT_FLAG_CMD		0
+#define PKT_FLAG_DUP		1
+#define PKT_FLAG_ERR		2
+#define PKT_FLAG_OK			3
+
+
+
 
 #define PKT_CMD_ID			0x00
 #define PKT_CMD_STATUS		0x01
 #define PKT_CMD_MEAS		0x02
+#define PKT_CMD_ENTERBOOT	0x0F
 
 #define PKT_CMD_SETADDR		0x10
 #define PKT_CMD_GETCAL		0x11
@@ -37,7 +44,7 @@
 #define MUX_CH5	6
 #define MUX_CH6	5
 
-#define PARAMS_LEN	33
+#define PARAMS_LEN	32
 #define PARAMS_VER	1
 
 #define PARAM_CHECK_CRC_ERR	0x01
@@ -46,14 +53,13 @@
 #define PARAM_CHECK_CURRENT	0x08
 #define PARAM_CHECK_ERROR	0x80
 
-#define CAL_DATA_ADDR			0x00
-#define CAL_DATA_OFFSET			0x01
-#define CAL_DATA_FULLSCALE		0x11
+#define CAL_DATA_OFFSET			0x00
+#define CAL_DATA_FULLSCALE		0x10
 
 #define CAL_PAGE_BYTES	(PARAMS_LEN+4)
 
-#define CAL_PAGE_OFFSET_VER		0x00
-#define CAL_PAGE_OFFSET_VER_INV	0x01
+#define CAL_PAGE_OFFSET_ADDR	0x00
+#define CAL_PAGE_OFFSET_VER		0x01
 #define CAL_PAGE_OFFSET_CRCH	0x02
 #define CAL_PAGE_OFFSET_CRCL	0x03
 #define CAL_PAGE_OFFSET_DATA	0x04
@@ -70,46 +76,45 @@ SI_LOCATED_VARIABLE_NO_INIT(boot_flash[512], uint8_t, const SI_SEG_CODE, FLASH_A
 
 
 /* --- calibration page structure ---
+ * Address (1 byte)
  * Version (1 byte)
- * Version inverted (1 byte)
- * Data CRC-16 (2 bytes)
+ * Cal CRC-16 (2 bytes)
  * CAL DATA (0-252 bytes)
  */
 
 /* --- CAL DATA structure v1 ---
- * 0x000: Card address
- * 0x001: CH1 OFFSET MSB
- * 0x002: CH1 OFFSET LSB
- * 0x003: CH2 OFFSET MSB
- * 0x004: CH2 OFFSET LSB
- * 0x005: CH3 OFFSET MSB
- * 0x006: CH3 OFFSET LSB
- * 0x007: CH4 OFFSET MSB
- * 0x008: CH4 OFFSET LSB
- * 0x009: CH5 OFFSET MSB
- * 0x00A: CH5 OFFSET LSB
- * 0x00B: CH6 OFFSET MSB
- * 0x00C: CH6 OFFSET LSB
- * 0x00D: VDD OFFSET MSB
- * 0x00E: VDD OFFSET LSB
- * 0x00F: TEMP OFFSET MSB
- * 0x010: TEMP OFFSET LSB
- * 0x011: CH1 FULLSCALE MSB
- * 0x012: CH1 FULLSCALE LSB
- * 0x013: CH2 FULLSCALE MSB
- * 0x014: CH2 FULLSCALE LSB
- * 0x015: CH3 FULLSCALE MSB
- * 0x016: CH3 FULLSCALE LSB
- * 0x017: CH4 FULLSCALE MSB
- * 0x018: CH4 FULLSCALE LSB
- * 0x019: CH5 FULLSCALE MSB
- * 0x01A: CH5 FULLSCALE LSB
- * 0x01B: CH6 FULLSCALE MSB
- * 0x01C: CH6 FULLSCALE LSB
- * 0x01D: VDD FULLSCALE MSB
- * 0x01E: VDD FULLSCALE LSB
- * 0x01F: TEMP FULLSCALE MSB
- * 0x020: TEMP FULLSCALE LSB
+ * 0x000: CH1 OFFSET MSB
+ * 0x001: CH1 OFFSET LSB
+ * 0x002: CH2 OFFSET MSB
+ * 0x003: CH2 OFFSET LSB
+ * 0x004: CH3 OFFSET MSB
+ * 0x005: CH3 OFFSET LSB
+ * 0x006: CH4 OFFSET MSB
+ * 0x007: CH4 OFFSET LSB
+ * 0x008: CH5 OFFSET MSB
+ * 0x009: CH5 OFFSET LSB
+ * 0x00A: CH6 OFFSET MSB
+ * 0x00B: CH6 OFFSET LSB
+ * 0x00C: VDD OFFSET MSB
+ * 0x00D: VDD OFFSET LSB
+ * 0x00E: TEMP OFFSET MSB
+ * 0x00F: TEMP OFFSET LSB
+ * 0x010: CH1 FULLSCALE MSB
+ * 0x011: CH1 FULLSCALE LSB
+ * 0x012: CH2 FULLSCALE MSB
+ * 0x013: CH2 FULLSCALE LSB
+ * 0x014: CH3 FULLSCALE MSB
+ * 0x015: CH3 FULLSCALE LSB
+ * 0x016: CH4 FULLSCALE MSB
+ * 0x017: CH4 FULLSCALE LSB
+ * 0x018: CH5 FULLSCALE MSB
+ * 0x019: CH5 FULLSCALE LSB
+ * 0x01A: CH6 FULLSCALE MSB
+ * 0x01B: CH6 FULLSCALE LSB
+ * 0x01C: VDD FULLSCALE MSB
+ * 0x01D: VDD FULLSCALE LSB
+ * 0x01E: TEMP FULLSCALE MSB
+ * 0x01F: TEMP FULLSCALE LSB
  */
 
 /* --- CAL DATA structure v2 ---
@@ -158,6 +163,7 @@ SI_LOCATED_VARIABLE_NO_INIT(boot_flash[512], uint8_t, const SI_SEG_CODE, FLASH_A
  *
  */
 
+bool enterBootPend = false;
 
 uint8_t pktBuf_len = 0;
 uint8_t xdata pktBuf[PKT_MAXLEN];
@@ -245,7 +251,14 @@ bool sendReply()
 		return false;
 	}
 
-	// enforce minimum RX -> TX time by waiting until Timer0 overflows
+	// enforce minimum RX -> TX time (5 ms) by waiting until Timer0 overflows
+	TCON_TR0 = 0;
+	TCON_TF0 = 0;
+	TH0 = 0xF8;
+	TL0 = 0x85;
+	TCON_TR0 = 1;
+
+
 	while (!TCON_TF0);
 	resetTimeout();
 
@@ -317,8 +330,8 @@ void doMeas()
 	{
 		P1 = chMux[ch];	// select MUX channel
 		adcRes = (((uint32_t)getADC() * cal_fullscale[ch]) / 65536) + cal_offset[ch];	// apply calibration
-		pktBuf[PKT_INDEX_DATA + (ch*2)]     = adcRes & 0xFF;	// LSB
-		pktBuf[PKT_INDEX_DATA + (ch*2) + 1] = adcRes >> 8;	    // MSB
+		pktBuf[PKT_INDEX_DATA + (ch*2)] 	= adcRes >> 8;	    // MSB
+		pktBuf[PKT_INDEX_DATA + (ch*2) + 1] = adcRes & 0xFF;	// LSB
 	}
 
 	P1 = 0;		// set MUX input to ground
@@ -328,8 +341,9 @@ void doMeas()
 	ADC0CF &= ~ADC0CF_ADGN__GAIN_1;	// set gain to 0.5
 	ADC0MX = ADC0MX_ADC0MX__VDD;	// select vdd channel
 	adcRes = (((uint32_t)getADC() * cal_fullscale[6]) / 65536) + cal_offset[6];	// apply calibration
-	pktBuf[PKT_INDEX_DATA + 12] = adcRes & 0xFF;	// LSB
-	pktBuf[PKT_INDEX_DATA + 13] = adcRes >> 8;	    // MSB
+	pktBuf[PKT_INDEX_DATA + 12] = adcRes >> 8;	    // MSB
+	pktBuf[PKT_INDEX_DATA + 13] = adcRes & 0xFF;	// LSB
+
 
 	// measure temperature
 	REF0CN |= REF0CN_TEMPE__TEMP_ENABLED;	// enable temp sensor
@@ -338,8 +352,8 @@ void doMeas()
 	adcRes = (((uint32_t)getADC() * cal_fullscale[7]) / 65536) + cal_offset[7];	// apply calibration
 	ADC0MX = ADC0MX_ADC0MX__GND;	// select GND
 	REF0CN &= ~REF0CN_TEMPE__TEMP_ENABLED;	// disable temp sensor
-	pktBuf[PKT_INDEX_DATA + 14] = adcRes & 0xFF;	// LSB
-	pktBuf[PKT_INDEX_DATA + 15] = adcRes >> 8;	    // MSB
+	pktBuf[PKT_INDEX_DATA + 14] = adcRes >> 8;	    // MSB
+	pktBuf[PKT_INDEX_DATA + 15] = adcRes & 0xFF;	// LSB
 }
 
 
@@ -350,12 +364,8 @@ bool checkParams()
 	if (nvs_flash[CAL_PAGE_OFFSET_VER] != PARAMS_VER)
 		return false;	// wrong version
 
-	if (nvs_flash[CAL_PAGE_OFFSET_VER_INV] != (PARAMS_VER^0xFF))
-		return false;	// wrong version complement
-
 	CRC0CN0 |= CRC0CN0_CRCVAL__SET_ONES;
 	CRC0CN0 |= CRC0CN0_CRCINIT__INIT;
-
 
 	for (i=CAL_PAGE_OFFSET_DATA; i<(PARAMS_LEN+CAL_PAGE_OFFSET_DATA); i++)
 	{
@@ -377,10 +387,14 @@ void loadParams()
 {
 	uint8_t i;
 
+	ownAddr = nvs_flash[CAL_PAGE_OFFSET_ADDR];
+
+	if (ownAddr == 0xFF)
+		ownAddr = 0;
+
 	if (checkParams())
 	{
-		// parameters OK, load addr+cal
-		ownAddr = nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_ADDR];
+		// parameters OK, load cal
 
 		for (i=0; i<16; i++)
 		{
@@ -415,9 +429,6 @@ bool verifyCal()
 	CRC0CN0 |= CRC0CN0_CRCVAL__SET_ONES;
 	CRC0CN0 |= CRC0CN0_CRCINIT__INIT;
 
-	// address byte
-	CRC0IN = ownAddr;
-
 	// cal data
 	for (i=0; i<16; i++)
 	{
@@ -437,12 +448,10 @@ bool verifyCal()
 	if (CRC0DAT != nvs_flash[CAL_PAGE_OFFSET_CRCL])
 		return false;
 
-	if ((PARAMS_VER^0xFF) != nvs_flash[CAL_PAGE_OFFSET_VER_INV])
-		return false;
 	if (PARAMS_VER != nvs_flash[CAL_PAGE_OFFSET_VER])
 		return false;
 
-	if (ownAddr != nvs_flash[CAL_PAGE_OFFSET_DATA+CAL_DATA_ADDR])
+	if (ownAddr != nvs_flash[CAL_PAGE_OFFSET_ADDR])
 		return false;
 
 	for (i=0; i<16; i++)
@@ -479,7 +488,7 @@ bool writeCal()
 	flashWriteByte(FLASH_ADDR_CAL, 0);
 
 	// write address byte
-	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_DATA+CAL_DATA_ADDR, ownAddr);
+	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_ADDR, ownAddr);
 
 	// write cal data
 	for (i=0; i<16; i++)
@@ -495,7 +504,6 @@ bool writeCal()
 	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_CRCL, CRC0DAT);
 
 	// write version info
-	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_VER_INV, (PARAMS_VER^0xFF));
 	flashWriteByte(FLASH_ADDR_CAL+CAL_PAGE_OFFSET_VER, PARAMS_VER);
 
 	// verify
@@ -512,6 +520,9 @@ void processPkt()
 	uint8_t dstAddr;
 	uint8_t seq;
 	uint8_t tmp8;
+	uint8_t flags;
+	uint8_t cmd;
+	bool isDup = false;
 
 	if (!cobs_decode(pktBuf_len, pktBuf))
 	{
@@ -525,24 +536,38 @@ void processPkt()
 	if ((seqInit) && (seq == lastSeq))
 	{
 		// already processed this packet
-		return;
+		isDup = true;
 	}
 
 	seqInit = true;
 	lastSeq = seq;
+
+	flags = pktBuf[PKT_INDEX_CMD] & 0x03;	// keep bits 1-0 (flags)
+	cmd	= (pktBuf[PKT_INDEX_CMD] & 0xFC) >> 2;	// keep bits 7-2 (cmd), shift to right
+
+	if (flags != PKT_FLAG_CMD)
+		return;	// do not process replies if they for some reason end up here
+
+	if (cmd > 0x2F)
+		return;	// do not process bootloader packets
+
+	pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_CMD -> PKT_FLAG_DUP
+
+	if (isDup)
+	{
+		sendReply();
+	}
+
+	pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_DUP -> PKT_FLAG_ERR
 
 	if ((ownAddr == dstAddr) && (ownAddr != 0))
 	{
 		// addressed to this node
 
 		// prepare reply
-		pktBuf[PKT_INDEX_DST] = pktBuf[PKT_INDEX_SRC];
-		pktBuf[PKT_INDEX_SRC] = ownAddr;
-		pktBuf[PKT_INDEX_FLAGS] = PKT_FLAG_REPLY;
 		pktBuf[PKT_INDEX_LEN] = PKT_MINLEN;
 
-
-		switch(pktBuf[PKT_INDEX_CMD])
+		switch(cmd)
 		{
 			case PKT_CMD_ID:
 
@@ -555,12 +580,12 @@ void processPkt()
 				pktBuf[PKT_INDEX_DATA + 5] = DERIVID;
 				pktBuf[PKT_INDEX_DATA + 6] = REVID;
 
-				pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
 				pktBuf[PKT_INDEX_LEN] += 7;	// 7 bytes payload
 				break;
 			case PKT_CMD_MEAS:
 				doMeas();
-				pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
 				pktBuf[PKT_INDEX_LEN] += 16;	// 16 bytes payload
 				break;
 
@@ -571,7 +596,7 @@ void processPkt()
 					pktBuf[PKT_INDEX_DATA + tmp8] = ((uint8_t*)cal_offset)[tmp8];
 					pktBuf[PKT_INDEX_DATA + 16 + tmp8] = ((uint8_t*)cal_fullscale)[tmp8];
 				}
-				pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
 				pktBuf[PKT_INDEX_LEN] += 32;	// 32 bytes payload
 				break;
 
@@ -582,7 +607,7 @@ void processPkt()
 					((uint8_t*)cal_offset)[tmp8] = pktBuf[PKT_INDEX_DATA + tmp8];
 					((uint8_t*)cal_fullscale)[tmp8] = pktBuf[PKT_INDEX_DATA + 16 + tmp8];
 				}
-				pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+				pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
 				break;
 
 			case PKT_CMD_WRITECAL:
@@ -596,12 +621,16 @@ void processPkt()
 				if (writeCal())
 				{
 					// write OK
-					pktBuf[PKT_INDEX_FLAGS] |= PKT_FLAG_OK;
+					pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
 				}
 
 				// clear key codes from memory
 				flash_key1 = 0;
 				flash_key2 = 0;
+				break;
+			case PKT_CMD_ENTERBOOT:
+				enterBootPend = true;
+				pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
 				break;
 
 		}
@@ -609,30 +638,60 @@ void processPkt()
 		// send reply
 		sendReply();
 	}
-	else if (dstAddr == 255)
+	else if (dstAddr == 0)
 	{
-		if ((pktBuf[PKT_INDEX_CMD] == PKT_CMD_SETADDR) && (pktBuf[PKT_INDEX_LEN] == 9))
+		if ((cmd == PKT_CMD_SETADDR) && (pktBuf[PKT_INDEX_LEN] == 7))
 		{
 			// set address
 			// check if jumper is present
-			//if (!P2_B0)
-			if (1)
+			if (!P2_B0)
 			{
 				// yes, proceed
-
-				// prepare reply
-				pktBuf[PKT_INDEX_DST] = pktBuf[PKT_INDEX_SRC];
-				pktBuf[PKT_INDEX_FLAGS] = PKT_FLAG_REPLY | PKT_FLAG_OK;
-				pktBuf[PKT_INDEX_LEN] = PKT_MINLEN;
 
 				// set address
 				ownAddr = pktBuf[PKT_INDEX_DATA];
 
+				// prepare reply
+				pktBuf[PKT_INDEX_DST] = ownAddr;
+				pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
+				pktBuf[PKT_INDEX_LEN] = PKT_MINLEN;
+
 				// in this case, send reply
-				pktBuf[PKT_INDEX_SRC] = ownAddr;
 				sendReply();
 			}
 
+
+		}
+		else if ((cmd == PKT_CMD_ID) && (!P2_B0))
+		{
+			// if jumper is present, answer ID cmd to failsafe address
+
+			for (tmp8 = 0; tmp8 < 4; tmp8++)
+			{
+				pktBuf[PKT_INDEX_DATA + tmp8] = uuid[tmp8];
+			}
+
+			pktBuf[PKT_INDEX_DATA + 4] = DEVICEID;
+			pktBuf[PKT_INDEX_DATA + 5] = DERIVID;
+			pktBuf[PKT_INDEX_DATA + 6] = REVID;
+
+			pktBuf[PKT_INDEX_DST] = ownAddr;
+			pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
+			pktBuf[PKT_INDEX_LEN] = PKT_MINLEN+7;	// 7 bytes payload
+
+			// in this case, send reply
+			sendReply();
+		}
+		else if ((cmd == PKT_CMD_ENTERBOOT) && (!P2_B0))
+		{
+			// if jumper is present, answer enter boot cmd to failsafe address
+
+			enterBootPend = true;
+			pktBuf[PKT_INDEX_DST] = ownAddr;
+			pktBuf[PKT_INDEX_CMD]++; // PKT_FLAG_ERR -> PKT_FLAG_OK
+			pktBuf[PKT_INDEX_LEN] = PKT_MINLEN;
+			// in this case, send reply
+			sendReply();
 
 		}
 
@@ -750,6 +809,9 @@ int main(void)
 
 	for (;;)
 	{
+		if (enterBootPend)
+			enter_bl();	// enter bootloader if pending
+
 		// wait for RX
 		while (!SCON0_RI)
 		{

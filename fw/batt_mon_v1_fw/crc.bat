@@ -1,0 +1,2 @@
+srec_cat ".\Keil 8051 v9.60.0 - Debug\batt_mon_v1_fw.hex" -intel -crop 0 0x1BFE -fill 0xFF 0x0000 0x1BFE -crc16-b-e 0x1BFE -broken -o ".\Keil 8051 v9.60.0 - Debug\batt_mon_v1_fw_crc.hex" -intel -address-length=2 -obs=16
+srec_cat ".\Keil 8051 v9.60.0 - Debug\batt_mon_v1_fw.hex" -intel -crop 0 0x1BFE -fill 0xFF 0x0000 0x1BFE -crc16-b-e 0x1BFE -broken -o ".\Keil 8051 v9.60.0 - Debug\batt_mon_v1_fw_crc.bin" -binary

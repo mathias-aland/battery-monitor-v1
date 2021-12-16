@@ -45,7 +45,6 @@
 
 #define BL_START_PIN P2_B0
 #define BL_SIGNATURE 0xA5
-#define BL_DEFAULT_ADDR 0xFE
 
 // Bootloader firmware revision number
 #define BL_REVISION 0x01

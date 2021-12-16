@@ -223,12 +223,11 @@ RX_PKT_CHKPTR:
 RX_PKT_OK:
 ; Check address
 	MOV		A, ?BUFFER+PKT_INDEX_DST
-	JZ		RX_RESET	; 0 is not a valid address
-	JB		BL_START_PIN, RX_PKT_OK_1 ; check if BL_START_PIN is low (jumper present)
-	CJNE	A, #BL_DEFAULT_ADDR, RX_PKT_OK_1
-	AJMP	RX_PKT_OK_2
+	JNZ		RX_PKT_OK_1	; 0 is the failsafe mode address
+	JNB		BL_START_PIN, RX_PKT_OK_2 ; check if BL_START_PIN is low (jumper present)
+	AJMP	RX_RESET
 RX_PKT_OK_1:
-	CJNE	A, AR2, RX_RESET
+	CJNE	A, AR2, RX_RESET	; check address
 RX_PKT_OK_2:
 ; check if this is a bootloader cmd
 	MOV		R1, #?BUFFER+PKT_INDEX_CMD

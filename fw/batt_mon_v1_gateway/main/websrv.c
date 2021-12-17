@@ -14,6 +14,8 @@
 #include <esp_ota_ops.h>
 #include "esp_rom_crc.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
+#include "esp_heap_caps.h"
 #include <nvs_flash.h>
 #include <cJSON.h>
 #include <sys/param.h>
@@ -352,6 +354,21 @@ esp_err_t api_get_handler(httpd_req_t *req)
 		cJSON *root;
 		root = cJSON_CreateObject();
 
+
+		// wifi stats
+		wifi_ap_record_t ap;
+		if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+		{
+			cJSON_AddNumberToObject(root, "wifi_rssi", ap.rssi);
+		}
+		else
+		{
+			cJSON_AddNullToObject(root, "wifi_rssi");
+		}
+
+		// free heap
+		cJSON_AddNumberToObject(root, "heap_int", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+		cJSON_AddNumberToObject(root, "heap_ext", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
 		// enabled groups
 		cJSON *jGroups = cJSON_CreateArray();

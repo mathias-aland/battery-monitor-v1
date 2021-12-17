@@ -67,6 +67,19 @@
 							
 								var respJSON = JSON.parse(xhr.responseText);
 								
+								// wifi status
+								if (respJSON.wifi_rssi === null)
+								{
+									document.getElementById("wifi_status").textContent = "Wi-Fi RSSI: N/A";
+								}
+								else
+								{
+									document.getElementById("wifi_status").textContent = "Wi-Fi RSSI: " + respJSON.wifi_rssi + " dBm";
+								}
+								
+								// heap
+								document.getElementById("mem").textContent = "Free RAM: internal = " + respJSON.heap_int + ", external = " + respJSON.heap_ext;
+								
 								// fill table with data
 								
 								var grpData = [];
@@ -465,6 +478,9 @@
 			<th style="width:70px">Temp</th>
 			</tr>
 		</table>
+		<br>
+		<div id="wifi_status"></div>
+		<div id="mem"></div>
 		<br>
 		<div id="progress"></div>
 		<br><br>

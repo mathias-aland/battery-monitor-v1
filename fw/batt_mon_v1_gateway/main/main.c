@@ -47,26 +47,11 @@
 
 //static QueueHandle_t uart0_queue;
 
-static const char *TAG = "uart_events";
-
-
-
-
+static const char *TAG = "main.c";
 
 // global packet sequence counter
 volatile uint8_t seq = 0;
 
-
-
-
-
-
-//typedef enum
-//{
-//	COMM_REQ_CANCEL = 0,
-//	COMM_REQ_MEAS,
-//	COMM_REQ_FWUPD
-//} comm_reqtype_t;
 
 
 typedef struct
@@ -80,34 +65,12 @@ typedef struct
 } node_response_t;
 
 
-
-//typedef struct
-//{
-//	comm_reqtype_t reqType;
-//	int dat_len;
-//	uint8_t addr;
-//	uint8_t *dat;
-//} comm_req_t;
-
-//QueueHandle_t node_response_queue;
-//QueueHandle_t comm_req_queue;
-
-
-
 enum {
     NODE_STATUS_UNKNOWN,
     NODE_STATUS_OK,
     NODE_STATUS_UNREACHABLE,
 	NODE_STATUS_DISABLED
 };
-
-
-
-
-
-
-
-
 
 enum {
 	CAL_NONE,
@@ -123,28 +86,11 @@ enum {
 	CAL_OP_SAVE
 };
 
-
-
-
-
-
-
-
-
-
-
 #define LED_CMD_CONNECTED		0x01
 #define LED_CMD_DISCONNECTED	0x02
 
 #define LED_CMD_MODE_NORMAL		0x04
 #define LED_CMD_MODE_AP			0x08
-
-
-
-
-
-
-
 
 
 typedef struct
@@ -188,254 +134,106 @@ TimerHandle_t led2_timer;
 TimerHandle_t led3_timer;
 
 
-// mutexes
+static EventGroupHandle_t wifi_event_group;
+
+
+#define STA_CONNECTED_BIT 		BIT0
+#define STA_DISCONNECTED_BIT 	BIT1
+#define AP_STARTED_BIT 			BIT2
+#define AP_STOPPED_BIT 			BIT3
+#define STA_ENABLED_BIT 		BIT4
+#define AP_ENABLED_BIT 			BIT5
+
+
+
+wifi_config_t wifi_config_ap = {
+									.ap = {
+										.ssid = "Battery monitor AP",
+										.password = "batt_mon",
+										.authmode = WIFI_AUTH_WPA2_PSK,
+										.max_connection = 4,
+										.channel = 1
+									}
+								};
 
 
 
 
+//static void disconnect_handler(void* arg, esp_event_base_t event_base,
+//                               int32_t event_id, void* event_data)
+//{
+////    httpd_handle_t* server = (httpd_handle_t*) arg;
+////    if (*server) {
+////        ESP_LOGI(TAG, "Stopping webserver");
+////        stop_webserver(*server);
+////        *server = NULL;
+////    }
+////
+////    if (sntp_enabled())
+////    	sntp_stop();
+//
+//    xTaskNotify(h_led_task, LED_CMD_DISCONNECTED, eSetBits);
+//}
+//
+//static void connect_handler(void* arg, esp_event_base_t event_base,
+//                            int32_t event_id, void* event_data)
+//{
+////    httpd_handle_t* server = (httpd_handle_t*) arg;
+////    if (*server == NULL) {
+////        ESP_LOGI(TAG, "Starting webserver");
+////        *server = start_webserver();
+////    }
+////
+////
+////    if (sntp_enabled())
+////    	sntp_stop();
+////
+////    sntp_init();
+//
+//
+//    xTaskNotify(h_led_task, LED_CMD_CONNECTED, eSetBits);
+//}
 
 
-static void disconnect_handler(void* arg, esp_event_base_t event_base,
-                               int32_t event_id, void* event_data)
+
+
+// network event handler
+static void net_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
-//    httpd_handle_t* server = (httpd_handle_t*) arg;
-//    if (*server) {
-//        ESP_LOGI(TAG, "Stopping webserver");
-//        stop_webserver(*server);
-//        *server = NULL;
-//    }
-//
-//    if (sntp_enabled())
-//    	sntp_stop();
-
-    xTaskNotify(h_led_task, LED_CMD_DISCONNECTED, eSetBits);
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED){
+    	// disconnected from AP in STA mode
+    	xTaskNotify(h_led_task, LED_CMD_DISCONNECTED, eSetBits);
+    	if (xEventGroupGetBits(wifi_event_group) & STA_ENABLED_BIT)
+    	{
+    		xEventGroupClearBits(wifi_event_group, STA_CONNECTED_BIT);
+    		xEventGroupSetBits(wifi_event_group, STA_DISCONNECTED_BIT);
+    		esp_wifi_connect();	// reconnect if in STA mode
+    	}
+    	else
+    	{
+    		sntp_stop();	// stop NTP in case STA is disabled
+    		xEventGroupClearBits(wifi_event_group, STA_CONNECTED_BIT);
+    		xEventGroupSetBits(wifi_event_group, STA_DISCONNECTED_BIT);
+    	}
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+    	// got IP in STA mode
+    	xTaskNotify(h_led_task, LED_CMD_CONNECTED, eSetBits);
+    	xEventGroupClearBits(wifi_event_group, STA_DISCONNECTED_BIT);
+    	xEventGroupSetBits(wifi_event_group, STA_CONNECTED_BIT);
+    	if (!sntp_enabled())
+    		sntp_init();	// start NTP after connecting
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STOP) {
+    	// AP mode stopped
+    	xTaskNotify(h_led_task, LED_CMD_DISCONNECTED, eSetBits);
+    	xEventGroupClearBits(wifi_event_group, AP_STARTED_BIT);
+    	xEventGroupSetBits(wifi_event_group, AP_STOPPED_BIT);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+    	// AP mode started
+    	xTaskNotify(h_led_task, LED_CMD_CONNECTED, eSetBits);
+    	xEventGroupClearBits(wifi_event_group, AP_STOPPED_BIT);
+    	xEventGroupSetBits(wifi_event_group, AP_STARTED_BIT);
+    }
 }
-
-static void connect_handler(void* arg, esp_event_base_t event_base,
-                            int32_t event_id, void* event_data)
-{
-//    httpd_handle_t* server = (httpd_handle_t*) arg;
-//    if (*server == NULL) {
-//        ESP_LOGI(TAG, "Starting webserver");
-//        *server = start_webserver();
-//    }
-//
-//
-//    if (sntp_enabled())
-//    	sntp_stop();
-//
-//    sntp_init();
-
-
-    xTaskNotify(h_led_task, LED_CMD_CONNECTED, eSetBits);
-}
-
-
-
-
-
-
-//bool processPkt(uint8_t *buf, uint8_t len)
-//{
-//	// allocate memory for response
-//	node_response_t* resp = (node_response_t*)malloc(sizeof(node_response_t));
-//
-//	if (resp == NULL)
-//		return false;	// memory allocation failed
-//
-//	// clear data
-//	memset(resp, 0, sizeof(node_response_t));
-//
-//	if (!cobs_decode(len, buf))
-//	{
-//		// COBS decoding failure, indicate failure
-//		resp->flags = PKT_FLAG_DECODEFAIL;
-//	}
-//	else
-//	{
-//		// decode OK
-//		resp->flags = (pkt_flag_t)(buf[PKT_INDEX_CMD] & 0x03);	// keep bits 1-0 (flags)
-//		resp->cmd	= (buf[PKT_INDEX_CMD] & 0xFC) >> 2;	// keep bits 7-2 (cmd), shift to right
-//		resp->datalen = buf[PKT_INDEX_LEN] - PKT_MINLEN;
-//		resp->addr = buf[PKT_INDEX_DST];
-//		resp->seq = buf[PKT_INDEX_SEQ];
-//
-//		if (resp->datalen > 0)
-//			memcpy(resp->data, &buf[PKT_INDEX_DATA], resp->datalen);
-//
-//	}
-//
-//	// send to queue
-//
-//	if (xQueueSend(node_response_queue, &resp, 0) != pdTRUE)
-//	{
-//		// failed, free memory used by response
-//		free(resp);
-//		return false;
-//	}
-//
-//	return true;
-//}
-//
-//
-//static void uart_event_task(void *pvParameters)
-//{
-//    uart_event_t event;
-//    //size_t buffered_size;
-//    //uint8_t* dtmp = (uint8_t*) malloc(RD_BUF_SIZE);
-//    uint8_t dtmp[RD_BUF_SIZE];
-//	uint8_t rxBuf[PKT_MAXLEN];
-//	uint8_t rxBuf_len = 0;
-//
-//    for(;;) {
-//        //Waiting for UART event.
-//        if(xQueueReceive(uart0_queue, (void * )&event, (portTickType)portMAX_DELAY)) {
-//            bzero(dtmp, RD_BUF_SIZE);
-//            //ESP_LOGI(TAG, "uart[%d] event:", EX_UART_NUM);
-//            switch(event.type) {
-//                //Event of UART receving data
-//                /*We'd better handler data event fast, there would be much more data events than
-//                other types of events. If we take too much time on data event, the queue might
-//                be full.*/
-//                case UART_DATA:
-//                    //printf("[UART DATA]: %d\r\n", event.size);
-//                    uart_read_bytes(EX_UART_NUM, dtmp, event.size, portMAX_DELAY);
-//
-//                    for (int i=0; i<event.size; i++)
-//                    {
-//                    	uint8_t rxByte =  dtmp[i];
-//
-//                    	//printf("%02X",rxByte);
-//
-//                    	// handle RX data
-//
-//                    	if (rxByte == 0)	// frame start/end received, reset packet handler or process packet depending on number of bytes in buffer
-//                    	{
-//                    		if (rxBuf_len >= PKT_MINLEN)
-//                    		{
-//                    			// process frame
-//
-//								processPkt(rxBuf, rxBuf_len);
-//
-//								// processing complete, wait for next packet
-//                    			rxBuf_len = 0;
-//                    		}
-//                    		else
-//                    		{
-//                    			// frame start
-//                    			rxBuf_len = 0;
-//                    		}
-//                    	}
-//                    	else
-//                    	{
-//							// limit buffer pointer to avoid overflow in case of noise etc.
-//							if (rxBuf_len < PKT_MAXLEN)
-//								rxBuf[rxBuf_len++] = rxByte;
-//                    	}
-//
-//
-//
-//
-//                    }
-//
-//                    //printf("\r\n");
-//
-//
-//                    //ESP_LOGI(TAG, "[DATA EVT]:");
-//                    //uart_write_bytes(EX_UART_NUM, (const char*) dtmp, event.size);
-//                    break;
-//                //Event of HW FIFO overflow detected
-//                case UART_FIFO_OVF:
-//                    ESP_LOGI(TAG, "hw fifo overflow");
-//                    // If fifo overflow happened, you should consider adding flow control for your application.
-//                    // The ISR has already reset the rx FIFO,
-//                    // As an example, we directly flush the rx buffer here in order to read more data.
-//                    uart_flush_input(EX_UART_NUM);
-//                    xQueueReset(uart0_queue);
-//                    rxBuf_len = 0;
-//                    break;
-//                //Event of UART ring buffer full
-//                case UART_BUFFER_FULL:
-//                    ESP_LOGI(TAG, "ring buffer full");
-//                    // If buffer full happened, you should consider encreasing your buffer size
-//                    // As an example, we directly flush the rx buffer here in order to read more data.
-//                    uart_flush_input(EX_UART_NUM);
-//                    xQueueReset(uart0_queue);
-//                    rxBuf_len = 0;
-//                    break;
-//                //Event of UART RX break detected
-//                case UART_BREAK:
-//                    ESP_LOGI(TAG, "uart rx break");
-//                    rxBuf_len = 0;
-//                    break;
-//                //Event of UART frame error
-//                case UART_FRAME_ERR:
-//                    ESP_LOGI(TAG, "uart frame error");
-//                    rxBuf_len = 0;
-//                    break;
-//                //Others
-//                default:
-//                    ESP_LOGI(TAG, "uart event type: %d", event.type);
-//                    break;
-//            }
-//        }
-//    }
-//    vTaskDelete(NULL);
-//}
-
-
-
-//
-//void doMeas(comm_req_t *commReq)
-//{
-//
-//    uint8_t txBuf[PKT_MAXLEN];
-//    node_response_t* resp;
-//
-//	// send test packet
-//	txBuf[1] = 8;			// pkt len
-//	txBuf[2] = commReq->addr;			// dst addr
-//	txBuf[3] = seq++;   // seq
-//	txBuf[4] = (0x02 << 2);	// measure cmd
-//
-//
-//	cobs_encode(txBuf[1]+1, txBuf);
-//
-//	uint8_t zeroByte[] = {0};
-//
-//	uart_write_bytes(EX_UART_NUM, zeroByte, 1);
-//	uart_write_bytes(EX_UART_NUM, txBuf, txBuf[1]+1);
-//	uart_write_bytes(EX_UART_NUM, zeroByte, 1);
-//
-//	// wait for TX and response
-//	if (xQueueReceive(node_response_queue, &resp, 3000 / portTICK_PERIOD_MS) == pdTRUE)
-//	{
-//		// data received
-//
-//		printf("addr: %u ", resp->addr);
-//		printf("cmd: %u ", resp->cmd);
-//		printf("dlen: %u ", resp->datalen);
-//		printf("flags: %u ", resp->flags);
-//		printf("seq: %u\r\n\r\n", resp->seq);
-//
-//
-//		free(resp);
-//	}
-//}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 //bool node_fwupd(node_t *pNode, uint8_t *txBuf)
 bool node_fwupd()
@@ -834,193 +632,28 @@ static void node_refresh_trig(TimerHandle_t xTimer)
 
 static void comm_task(void *pvParameters)
 {
-
-
-    //comm_req_t *commReq;
-
-
     uint32_t ulNotifiedValue;
-
-    //uint8_t txBuf[PKT_MAXLEN+2]; // make room for leading and trailing 0
-
-   // node_response_t* resp;
 
 	bus_pkt_t txPkt;
 	bus_pkt_t rxPkt;
 
-
-   // int meas_currnode = 0;
-    //int fwupd_currnode = 0;
-    //bool meas_active = false;
-    //bool fwupd_active = false;
-
-
     for (;;)
     {
 
-//    	if (meas_active || fwupd_active)
-//    	{
-//    		// actions pending, check for new events but do not block in this case
-//        	if (xTaskNotifyWait(0, ULONG_MAX, &ulNotifiedValue, 0) == pdFALSE) 	// wait for event
-//        	{
-//        		// timeout
-//        		ulNotifiedValue = 0;
-//        	}
-//    	}
-//    	else
-//    	{
-    		// no actions pending, OK to block until event received
-        	xTaskNotifyWait(0, ULONG_MAX, &ulNotifiedValue, portMAX_DELAY);	// wait for event
- //   	}
 
-
-//    	if (ulNotifiedValue & COMM_REQ_SETCAL)
-//    	{
-//    		// set cal data
-//    		caldata.status = CAL_PEND;
-//
-//    		//caldata.success = false;
-//
-//    		txPkt.cmd = PKT_CMD_SETCAL;
-//    		txPkt.datalen = 32;
-//    		txPkt.addr = caldata.address;
-//
-//			// copy cal data to tx buffer
-//			for (int ch=0; ch<8; ch++)
-//			{
-//				// convert from big-endian to host order
-//				txPkt.data[ch * 2] 	   	= caldata.cal_offset[ch] >> 8;		// MSB
-//				txPkt.data[ch * 2 + 1] 	= caldata.cal_offset[ch] & 0xFF;	// LSB
-//				txPkt.data[ch * 2 + 16] = caldata.cal_fullscale[ch] >> 8;	// MSB
-//				txPkt.data[ch * 2 + 17] = caldata.cal_fullscale[ch] & 0xFF;	// LSB
-//			}
-//
-//			int retryCnt = 3;
-//
-//			do
-//			{
-//
-//				txPkt.seq = seq++;   				// seq
-//
-//				// wait for TX and response
-//				if (sendBusCmd(&txPkt, &rxPkt, 1000))
-//				{
-//					// data received
-//
-//					if ((caldata.address == rxPkt.addr) && (PKT_CMD_SETCAL == rxPkt.cmd) && (PKT_FLAG_OK == rxPkt.flags))
-//					{
-//
-//						caldata.status = CAL_OK;
-//
-//						//caldata.success = true;
-//						xSemaphoreGive(caldata.xSemaphore);
-//
-//						break;	// exit loop
-//					}
-//
-//				}
-//
-//			} while (--retryCnt);
-//    	}
-//
-//    	if (ulNotifiedValue & COMM_REQ_GETCAL)
-//    	{
-//    		// get cal data
-//
-//    		//caldata.success = false;
-//    		caldata.status = CAL_PEND;
-//
-//			int retryCnt = 3;
-//
-//			do
-//			{
-//
-//
-//				txPkt.cmd = PKT_CMD_GETCAL;
-//				txPkt.datalen = 0;
-//				txPkt.addr = caldata.address;
-//				txPkt.seq = seq++;
-//
-//				// wait for TX and response
-//				if (sendBusCmd(&txPkt, &rxPkt, 1000))
-//				{
-//					// data received
-//
-//					if ((caldata.address == rxPkt.addr) && (PKT_CMD_GETCAL == rxPkt.cmd) && (PKT_FLAG_OK == rxPkt.flags))
-//					{
-//
-//						for (int ch=0; ch<8; ch++)
-//						{
-//							caldata.cal_offset[ch] = rxPkt.data[ch * 2 + 1] | (rxPkt.data[ch * 2] << 8);			// convert from big-endian to host order
-//							caldata.cal_fullscale[ch] = rxPkt.data[ch * 2 + 17] | (rxPkt.data[ch * 2 + 16] << 8);	// convert from big-endian to host order
-//						}
-//
-//						caldata.status = CAL_OK;
-//
-//						//caldata.success = true;	// set data valid flag
-//						// signal data ready
-//						xSemaphoreGive(caldata.xSemaphore);
-//
-//						break;	// exit loop
-//					}
-//
-//				}
-//
-//			} while (--retryCnt);
-//    	}
-
-//		if (ulNotifiedValue & COMM_REQ_SETADDR)
-//		{
-//
-//
-//			if (node_setaddr(setaddrData.address, txBuf))
-//			{
-//				// OK
-//				setaddrData.status = SETADDR_OK;
-//			}
-//			else
-//			{
-//				// error
-//				setaddrData.status = SETADDR_ERR;
-//			}
-//
-//			xSemaphoreGive(setaddrData.xSemaphore);
-//
-//		}
-
+        xTaskNotifyWait(0, ULONG_MAX, &ulNotifiedValue, portMAX_DELAY);	// wait for event
 
     	if (ulNotifiedValue & COMM_REQ_FWUPD)
     	{
     		// perform FW update on node
-
-    		//if ((!fwupd_active) && ((nodefw.status == FWUPD_STATUS_IDLE) || (nodefw.status == FWUPD_STATUS_DONE)))
     		if (nodefw.status == FWUPD_STATUS_PEND)
 			{
 				// start FW update
-
-
     			node_fwupd(&nodefw);
-
     			nodefw.curr_block = 0;
     			nodefw.curr_stage = FWUPD_STAGE_NONE;
-
-
-    			//nodefw.curr_addr = 0;
-    			//fwupd_currnode = 0;	// start from the beginning
-    			//fwupd_active = true;
 			}
     	}
-//
-//    	if (ulNotifiedValue & COMM_REQ_FWUPD_CANC)
-//		{
-//			// cancel FW update
-//			if (fwupd_active)
-//			{
-//				// cancel FW update
-//				fwupd_active = false;
-//			}
-//		}
-
 
     	if (ulNotifiedValue & COMM_REQ_MEASURE)
 		{
@@ -1052,22 +685,16 @@ static void comm_task(void *pvParameters)
     					if (sendBusCmd(&txPkt, &rxPkt, 500))	// response should arrive within 300 ms
     					{
     						// data received
-
     						if ((nodes[i].address == rxPkt.addr) && (PKT_CMD_MEAS == rxPkt.cmd) && (PKT_FLAG_OK == rxPkt.flags))
     						{
 
     							for (int ch=0; ch<8; ch++)
     							{
-    								//pNode->meas_data[ch] = (int16_t)be16toh(((uint16_t*)resp->data)[ch]);
-
     								nodes[i].meas_data[ch] = rxPkt.data[ch * 2 + 1] | (rxPkt.data[ch * 2] << 8);	// convert from big-endian to host order
-
-
     							}
 
 
     							printf("OK!\n");
-    							//printf("Meas OK at addr %d\n", pNode->address);
     							nodes[i].flag_error = 0;	// clear error flag
     							break;	// exit loop
     						}
@@ -1085,217 +712,11 @@ static void comm_task(void *pvParameters)
     					// failed
     					printf("Timeout!\n");
     					nodes[i].flag_error = 1;	// set error flag
-    					//printf("Meas ERR at addr %d\n", pNode->address);
     				}
-
-
-
     			}
-
     		}
-
-
-
-
-
-
-//    		if (!meas_active)
-//    		{
-//    			// start measurement collection
-//    			meas_currnode = 0;	// start from the beginning
-//    			meas_active = true;
-//    		}
 		}
-
-//
-//    	if (ulNotifiedValue & COMM_REQ_MEASURE_CANC)
-//		{
-//			if (meas_active)
-//			{
-//				// cancel measurement collection
-//				meas_active = false;
-//			}
-//		}
-
-
-
-//
-//    	if (fwupd_active)
-//    	{
-//    		// perform FW update on selected nodes
-//
-//    		if (nodefw.upd_type == FWUPD_TYPE_FAILSAFE)
-//    		{
-//
-//    			failsafe_node.flag_fwupd_err = false;
-//    			failsafe_node.flag_fwupd_ok = false;
-//				node_fwupd(&failsafe_node);
-//				failsafe_node.flag_fwupd_pend = false;
-//				fwupd_active = false;
-//				fwupd_currnode = 0;
-//				nodefw.curr_addr = 0;
-//				nodefw.upd_type = FWUPD_TYPE_NONE;
-//				nodefw.status = FWUPD_STATUS_DONE;
-//    		}
-//    		else if (nodefw.upd_type == FWUPD_TYPE_ALL)
-//    		{
-//    			node_t *pNode = &nodes[fwupd_currnode];	// point to current node in list
-//
-//
-//				//if ((pNode->address != 0) && (pNode->flag_fwupd_pend))
-//				if ((pNode->address != 0))
-//				{
-//					// FW update pending on this node
-//					pNode->flag_fwupd_err = false;
-//					pNode->flag_fwupd_ok = false;
-//					node_fwupd(pNode);
-//					pNode->flag_fwupd_pend = false;
-//				}
-//
-//				if (++fwupd_currnode == MAX_NODES)
-//				{
-//					// done
-//					fwupd_active = false;
-//					fwupd_currnode = 0;
-//					nodefw.curr_addr = 0;
-//					nodefw.upd_type = FWUPD_TYPE_NONE;
-//					nodefw.status = FWUPD_STATUS_DONE;
-//				}
-//				else
-//				{
-//					nodefw.status = FWUPD_STATUS_PEND;
-//				}
-//    		}
-//    		else
-//    		{
-//    			fwupd_active = false;
-//				fwupd_currnode = 0;
-//				nodefw.curr_addr = 0;
-//				nodefw.upd_type = FWUPD_TYPE_NONE;
-//				nodefw.status = FWUPD_STATUS_DONE;
-//    		}
-//    	}
-
-
-
-
-
-//    	if (meas_active)
-//    	{
-//    		// collect measurements
-//    		//printf("Meas request ACK\n");
-//
-//    		node_t *pNode = &nodes[meas_currnode];	// point to current node in list
-//
-//
-//			if ((pNode->address != 0) && (pNode->flag_enabled) && (!pNode->flag_paused))
-//			{
-//				// gather data from node
-//				int retryCnt = 3;
-//
-//				do
-//				{
-//					txPkt.cmd = PKT_CMD_MEAS;
-//					txPkt.datalen = 0;
-//					txPkt.addr = pNode->address;
-//					txPkt.seq = seq++;
-//
-//					// wait for TX and response
-//					if (sendBusCmd(&txPkt, &rxPkt, 1000))
-//					{
-//						// data received
-//
-//						if ((pNode->address == rxPkt.addr) && (PKT_CMD_MEAS == rxPkt.cmd) && (PKT_FLAG_OK == rxPkt.flags))
-//						{
-//
-//							for (int ch=0; ch<8; ch++)
-//							{
-//								//pNode->meas_data[ch] = (int16_t)be16toh(((uint16_t*)resp->data)[ch]);
-//
-//								pNode->meas_data[ch] = rxPkt.data[ch * 2 + 1] | (rxPkt.data[ch * 2] << 8);	// convert from big-endian to host order
-//
-//
-//							}
-//
-//
-//							//printf("Meas OK at addr %d\n", pNode->address);
-//							pNode->flag_error = 0;	// clear error flag
-//							break;	// exit loop
-//						}
-//
-//					}
-//
-//				} while (--retryCnt);
-//
-//				if (retryCnt == 0)
-//				{
-//					// failed
-//					pNode->flag_error = 1;	// set error flag
-//					//printf("Meas ERR at addr %d\n", pNode->address);
-//				}
-//
-//
-//
-//			}
-//
-//
-//			if (++meas_currnode == MAX_NODES)
-//			{
-//				// done
-//				meas_active = false;
-//				meas_currnode = 0;
-//			}
-//
-//    	}
-
-
-
-
-
-
-
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-//
-//    for (;;)
-//    {
-//
-//    	if (xQueueReceive(comm_req_queue, &commReq, portMAX_DELAY) == pdTRUE) {
-//    		printf("Meas request recv\n");
-//    		// process request
-//    		switch (commReq->reqType)
-//    		{
-//				case COMM_REQ_MEAS:
-//					doMeas(commReq);
-//					break;
-//				default:
-//					break;
-//    		}
-//
-//    		// free memory used by request
-//    		printf("Meas request free\n");
-//
-//    		if (commReq->dat != NULL)
-//    			free(commReq->dat);
-//
-//    		free(commReq);
-//
-//
-//    	}
-//
-//    }
 
 	vTaskDelete(NULL);
 }
@@ -1427,14 +848,9 @@ static void led_task(void *pvParameters)
 
 }
 
-
-
-
 static void button_task(void *pvParameters)
 {
 	static int btn_cnt = 0;
-	static bool apmode = false;
-
 
 	for (;;)
 	{
@@ -1449,77 +865,57 @@ static void button_task(void *pvParameters)
 			if (btn_cnt == 30)	// ~3 seconds
 			{
 				// switch mode
-
-				if (apmode)
+				if (xEventGroupGetBits(wifi_event_group) & AP_ENABLED_BIT)
 				{
-					// switch to normal mode
+					// disable AP and switch to normal mode
 					xTaskNotify(h_led_task, LED_CMD_MODE_NORMAL, eSetBits);
-					apmode = false;
+					xEventGroupClearBits(wifi_event_group, AP_ENABLED_BIT);
 
-					printf("Wifi disconnecting...\n");
-					ESP_ERROR_CHECK(esp_wifi_stop() );
+					ESP_LOGI(TAG,"Wifi stopping.");
+					esp_wifi_stop();
+					xEventGroupWaitBits(wifi_event_group, AP_STOPPED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
 
+					if (netCfg.wifi_config.sta.ssid[0] != '\0')
+					{
+						xEventGroupSetBits(wifi_event_group, STA_ENABLED_BIT);
+						esp_wifi_set_mode(WIFI_MODE_STA);
+						esp_wifi_set_config(WIFI_IF_STA, &netCfg.wifi_config);
 
-					ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-					ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &netCfg.wifi_config) );
-
-					printf("Wifi connecting...\n");
-
-					ESP_ERROR_CHECK(esp_wifi_start() );
-
-					esp_wifi_connect();
-
-
-
-
-
-
-
-
-
+						ESP_LOGI(TAG,"Wifi connecting.");
+						esp_wifi_start();
+						esp_wifi_connect();
+					}
+					else
+					{
+						// invalid SSID
+						esp_wifi_set_mode(WIFI_MODE_NULL);
+					}
 				}
 				else
 				{
 					// switch to ap mode
 					xTaskNotify(h_led_task, LED_CMD_MODE_AP, eSetBits);
-					apmode = true;
 
-					printf("Wifi disconnecting...\n");
-					ESP_ERROR_CHECK(esp_wifi_stop() );
+					if (xEventGroupGetBits(wifi_event_group) & STA_ENABLED_BIT)
+					{
+						xEventGroupClearBits(wifi_event_group, STA_ENABLED_BIT);
+						ESP_LOGI(TAG,"Wifi stopping.");
+						esp_wifi_stop();
+						xEventGroupWaitBits(wifi_event_group, STA_DISCONNECTED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);	// wait for wifi to become disconnected
+					}
 
-					 wifi_config_t wifi_config_ap = {
-							.ap = {
-								.ssid = "Battery monitor AP",
-								.password = "batt_mon",
-								.authmode = WIFI_AUTH_WPA2_PSK,
-								.max_connection = 4,
-								.channel = 1
-							}
-						};
-
-					ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP) );
-					ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config_ap) );
-
-					printf("Wifi AP initializing...\n");
-
-					ESP_ERROR_CHECK(esp_wifi_start() );
-
-
-
-
-
-
-
+					xEventGroupSetBits(wifi_event_group, AP_ENABLED_BIT);
+					esp_wifi_set_mode(WIFI_MODE_AP);
+					esp_wifi_set_config(WIFI_IF_AP, &wifi_config_ap);
+					ESP_LOGI(TAG,"Wifi AP initializing.");
+					esp_wifi_start();
 				}
-
 			}
-
 			btn_cnt++;
 		}
 
 		// delay 100 ms
 		vTaskDelay(100 / portTICK_PERIOD_MS);
-
 	}
 }
 
@@ -1586,32 +982,6 @@ void app_main(void)
 		// fatal error, abort execution
 		abort();
 	}
-
-//    for (int adrCnt=0; adrCnt < 10; adrCnt++)
-//    {
-//    	nodes[adrCnt].uid = 1234+adrCnt;
-//    	nodes[adrCnt].address = adrCnt+1;
-//    	nodes[adrCnt].flag_enabled = 1;
-//    	strcpy(nodes[adrCnt].name, "TEST");
-//    }
-
-    // create pkt response queue
-//    node_response_queue = xQueueCreate(1, sizeof(node_response_t*));
-//
-//    if (node_response_queue == NULL)
-//    {
-//    	// cannot create queue, abort execution
-//    	abort();
-//    }
-
-   //comm_req_queue = xQueueCreate(10, sizeof(comm_req_t*));
-
-    //if (comm_req_queue == NULL)
-    //{
-    //	// cannot create queue, abort execution
-    //	abort();
-    //}
-
 
     // init semaphores
     caldata.xSemaphore = xSemaphoreCreateBinary();
@@ -1904,110 +1274,50 @@ void app_main(void)
 
     }
 
+    // time settings
+	setenv("TZ", netCfg.timezone.tz, 1);
+	tzset();
+	sntp_setoperatingmode(SNTP_OPMODE_POLL);
+	sntp_setservername(0, netCfg.sntp_srv);
+
+	// start web server
+	ESP_LOGI(TAG, "Starting webserver");
+	server = start_webserver();
 
 
-
+    wifi_event_group = xEventGroupCreate();
+    xEventGroupSetBits(wifi_event_group, STA_DISCONNECTED_BIT);
+    xEventGroupSetBits(wifi_event_group, AP_STOPPED_BIT);
 
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&cfg);
 
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &server));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &net_event_handler, &server));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &net_event_handler, &server));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &net_event_handler, &server));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STOP, &net_event_handler, &server));
 
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &connect_handler, &server));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STOP, &disconnect_handler, &server));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
+    if (netCfg.wifi_config.sta.ssid[0] != '\0')
+	{
+		xEventGroupSetBits(wifi_event_group, STA_ENABLED_BIT);
+		esp_wifi_set_mode(WIFI_MODE_STA);
+		esp_wifi_set_config(WIFI_IF_STA, &netCfg.wifi_config);
 
-
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &netCfg.wifi_config) );
-
-
-
-
-
-
-
-
-
-    printf("Wifi connecting...\n");
-
-    ESP_ERROR_CHECK(esp_wifi_start() );
-
-    esp_wifi_connect();
-
-
-
-
-
-
-
-
-	/* Mark current app as valid */
-	const esp_partition_t *partition = esp_ota_get_running_partition();
-	printf("Currently running partition: %s\r\n", partition->label);
-
-	esp_ota_img_states_t ota_state;
-	if (esp_ota_get_state_partition(partition, &ota_state) == ESP_OK) {
-		if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-			esp_ota_mark_app_valid_cancel_rollback();
-		}
+		ESP_LOGI(TAG,"Wifi connecting.");
+		esp_wifi_start();
+		esp_wifi_connect();
+	}
+	else
+	{
+		// invalid SSID
+		esp_wifi_set_mode(WIFI_MODE_NULL);
 	}
 
 
-
-
-
-
-	ESP_LOGI(TAG, "Starting webserver");
-	server = start_webserver();
-
-
-
-	// update time from NTP
-
-	time_t now;
-	struct tm timeinfo;
-
-
-	char strftime_buf[64];
-
-	setenv("TZ", netCfg.timezone.tz, 1);
-	tzset();
-
-	time(&now);
-	localtime_r(&now, &timeinfo);
-	strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-	ESP_LOGI(TAG, "The current date/time is: %s", strftime_buf);
-
-
-	ESP_LOGI(TAG, "Initializing SNTP");
-	sntp_setoperatingmode(SNTP_OPMODE_POLL);
-	sntp_setservername(0, netCfg.sntp_srv);
-	sntp_init();
-
-
-
-
-
-
-    //Create a task to handler UART event from ISR
-   // xTaskCreate(uart_event_task, "uart_event_task", 2048, NULL, 12, NULL);
-
-
     xTaskCreate(comm_task, "comm_task", 2048, NULL, 5, &h_comm_task);
-
-
-
-
-
-
-
-
-
-
     tmr_node_refresh = xTimerCreate("Node refresh timer", ((uint32_t)netCfg.updInterval * 1000) / portTICK_PERIOD_MS, pdTRUE, (void *) 1, node_refresh_trig);
 
     // start timer
@@ -2020,9 +1330,20 @@ void app_main(void)
     // create button task
     xTaskCreate(button_task, "button_task", 2048, NULL, 16 , &h_button_task);
 
+	/* Mark current app as valid */
+	const esp_partition_t *partition = esp_ota_get_running_partition();
+	printf("Currently running partition: %s\r\n", partition->label);
 
-    //comm_req_t* commReq;
+	esp_ota_img_states_t ota_state;
+	if (esp_ota_get_state_partition(partition, &ota_state) == ESP_OK) {
+		if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+			esp_ota_mark_app_valid_cancel_rollback();
+		}
+	}
 
+	time_t now;
+	struct tm timeinfo;
+	char strftime_buf[64];
 
     for (;;)
 	{
@@ -2030,68 +1351,7 @@ void app_main(void)
     	localtime_r(&now, &timeinfo);
     	strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
     	ESP_LOGI(TAG, "The current date/time is: %s", strftime_buf);
-
-
-       // gpio_set_level(GPIO_NUM_1, 1);
         vTaskDelay(10000 / portTICK_PERIOD_MS);
-       // gpio_set_level(GPIO_NUM_1, 0);
-       // vTaskDelay(500 / portTICK_PERIOD_MS);
-
-
-        // allocate memory for request
-//    	commReq = (comm_req_t*)malloc(sizeof(comm_req_t));
-//
-//    	if (commReq != NULL)
-//    	{
-//			commReq->addr = 1;
-//			commReq->reqType = COMM_REQ_MEAS;
-//			commReq->dat_len = 0;
-//			commReq->dat = NULL;
-//
-//			printf("Meas request\n");
-//
-//			if (xQueueSend(comm_req_queue, &commReq, 0) != pdTRUE)
-//			{
-//				printf("Meas request failed\n");
-//				// failed, free memory used by request
-//				free(commReq);
-//			}
-//    	}
-
-
-
-
-
-
-		// send measurement start to queue
-
-
-
-//        // send test packet
-//        txBuf[1] = 8;			// pkt len
-//        txBuf[2] = 1;			// dst addr
-//        txBuf[3] = seq++;   // seq
-//        txBuf[4] = (0x02 << 2);	// cmd
-//
-//
-//        cobs_encode(txBuf[1]+1, txBuf);
-//
-//
-//        printf("[UART TX]: %d\r\n", txBuf[1]+1);
-//
-//		for (int i=0; i<txBuf[1]+1; i++)
-//		{
-//			printf("%02X",txBuf[i]);
-//		}
-//
-//		printf("\r\n");
-//
-//		uint8_t zeroByte[] = {0};
-//
-//		uart_write_bytes(EX_UART_NUM, zeroByte, 1);
-//        uart_write_bytes(EX_UART_NUM, txBuf, txBuf[1]+1);
-//        uart_write_bytes(EX_UART_NUM, zeroByte, 1);
-
 	}
 
 }
